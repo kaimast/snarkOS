@@ -16,6 +16,8 @@
 use parking_lot::RwLock;
 use std::{collections::HashMap, net::SocketAddr};
 
+/// The resolver allows converting between theconnection-specific
+/// socket address and the public listening address of a peer
 #[derive(Debug)]
 pub struct Resolver {
     /// The map of the listener address to (ambiguous) peer address.
@@ -43,19 +45,19 @@ impl Resolver {
     }
 
     /// Returns the (ambiguous) peer address for the given listener address, if it exists.
-    pub fn get_ambiguous(&self, peer_ip: &SocketAddr) -> Option<SocketAddr> {
-        self.from_listener.read().get(peer_ip).copied()
+    pub fn get_ambiguous(&self, peer_addr: &SocketAddr) -> Option<SocketAddr> {
+        self.from_listener.read().get(peer_addr).copied()
     }
 
     /// Inserts a bidirectional mapping of the listener address and the (ambiguous) peer address.
-    pub fn insert_peer(&self, listener_ip: SocketAddr, peer_addr: SocketAddr) {
-        self.from_listener.write().insert(listener_ip, peer_addr);
-        self.to_listener.write().insert(peer_addr, listener_ip);
+    pub fn insert_peer(&self, listener_addr: SocketAddr, peer_addr: SocketAddr) {
+        self.from_listener.write().insert(listener_addr, peer_addr);
+        self.to_listener.write().insert(peer_addr, listener_addr);
     }
 
     /// Removes the bidirectional mapping of the listener address and the (ambiguous) peer address.
-    pub fn remove_peer(&self, listener_ip: &SocketAddr) {
-        if let Some(peer_addr) = self.from_listener.write().remove(listener_ip) {
+    pub fn remove_peer(&self, listener_addr: &SocketAddr) {
+        if let Some(peer_addr) = self.from_listener.write().remove(listener_addr) {
             self.to_listener.write().remove(&peer_addr);
         }
     }

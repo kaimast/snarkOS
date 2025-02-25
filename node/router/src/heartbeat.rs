@@ -296,7 +296,7 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
         for peer_ip in self.router().trusted_peers() {
             // If the peer is not connected, attempt to connect to it.
             if !self.router().is_connected(peer_ip) {
-                // Attempt to connect to the trusted peer.
+                debug!("Attempting to (re-)connect to trusted peer `{peer_ip}`");
                 self.router().connect(*peer_ip);
             }
         }
@@ -307,7 +307,7 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
         // No-op
     }
 
-    // Remove addresses whose ban time has expired.
+    /// Remove addresses whose ban time has expired.
     fn handle_banned_ips(&self) {
         self.tcp().banned_peers().remove_old_bans(Self::IP_BAN_TIME_IN_SECS);
     }
