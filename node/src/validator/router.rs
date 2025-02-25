@@ -115,15 +115,24 @@ impl<N: Network, C: ConsensusStorage<N>> Reading for Validator<N, C> {
 
     /// Processes a message received from the network.
     async fn process_message(&self, peer_addr: SocketAddr, message: Self::Message) -> io::Result<()> {
-        let clone = self.clone();
-        if matches!(message, Message::BlockRequest(_) | Message::BlockResponse(_)) {
-            // Handle BlockRequest and BlockResponse messages in a separate task to not block the
-            // inbound queue.
-            tokio::spawn(async move {
-                clone.process_message_inner(peer_addr, message).await;
-            });
-        } else {
-            self.process_message_inner(peer_addr, message).await;
+        match &message {
+            Message::BlockRequest(_) | Message::BlockResponse(_) => {
+                // Handle BlockRequest and BlockResponse messages in
+                // a separate task to not block the inbound queue.
+                let clone = self.clone();
+                tokio::spawn(async move {
+                    clone.process_message_inner(peer_addr, message).await;
+                });
+            }
+            Message::Disconnect(msg) => {
+                warn!("Peer '{peer_addr}' requested disconnect: {:?}", msg.reason);
+                if let Some(listen_addr) = self.router().resolve_to_listener(&peer_addr) {
+                    self.router().disconnect(listen_addr);
+                }
+            }
+            _ => {
+                self.process_message_inner(peer_addr, message).await;
+            }
         }
         Ok(())
     }
