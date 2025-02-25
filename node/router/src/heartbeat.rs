@@ -32,6 +32,8 @@ pub const fn max(a: usize, b: usize) -> usize {
     }
 }
 
+/// Heartbeat containts logic that checks whether peers we are connected to are still responsive
+/// It also periodically removes stale nodes and swaps old connections for new ones
 pub trait Heartbeat<N: Network>: Outbound<N> {
     /// The duration in seconds to sleep in between heartbeat executions.
     const HEARTBEAT_IN_SECS: u64 = 25; // 25 seconds
@@ -105,7 +107,8 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
     }
 
     /// This function removes the oldest connected peer, to keep the connections fresh.
-    /// This function only triggers if the router is above the minimum number of connected peers.
+    /// It only triggers if the router is above the minimum number of connected peers,
+    /// and will not remove any bootstrap or trusted peers.
     fn remove_oldest_connected_peer(&self) {
         // Skip if the router is at or below the minimum number of connected peers.
         if self.router().number_of_connected_peers() <= Self::MINIMUM_NUMBER_OF_PEERS {

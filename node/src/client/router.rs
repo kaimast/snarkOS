@@ -124,13 +124,18 @@ impl<N: Network, C: ConsensusStorage<N>> Reading for Client<N, C> {
 
     /// Processes a message received from the network.
     async fn process_message(&self, peer_addr: SocketAddr, message: Self::Message) -> io::Result<()> {
-        let clone = self.clone();
         if matches!(message, Message::BlockRequest(_) | Message::BlockResponse(_)) {
             // Handle BlockRequest and BlockResponse messages in a separate task to not block the
             // inbound queue.
+            let clone = self.clone();
             tokio::spawn(async move {
                 clone.process_message_inner(peer_addr, message).await;
             });
+        } else if let Message::Disconnect(msg) = message {
+            warn!("Peer '{peer_addr}' requested disconnect: {:?}", msg.reason);
+            if let Some(peer_ip) = self.router().resolve_to_listener(&peer_addr) {
+                self.router().disconnect(peer_ip);
+            }
         } else {
             self.process_message_inner(peer_addr, message).await;
         }
