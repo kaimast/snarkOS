@@ -38,7 +38,11 @@ use snarkvm::{
     prelude::{Network, block::Transaction},
 };
 
+<<<<<<< HEAD
 use anyhow::{anyhow, bail, ensure};
+=======
+use anyhow::bail;
+>>>>>>> 6303b86fb (Redesign BlockSync to fully verify blockchain)
 use std::{io, net::SocketAddr, time::Duration};
 
 impl<N: Network, C: ConsensusStorage<N>> P2P for Client<N, C> {
@@ -231,12 +235,17 @@ impl<N: Network, C: ConsensusStorage<N>> Inbound<N> for Client<N, C> {
             }
         };
         // Send the `BlockResponse` message to the peer.
+<<<<<<< HEAD
         self.router().send(peer_ip, Message::BlockResponse(BlockResponse { request: message, blocks }));
         true
+=======
+        Outbound::send(self, peer_ip, Message::BlockResponse(BlockResponse { request: message, blocks }));
+>>>>>>> 6303b86fb (Redesign BlockSync to fully verify blockchain)
         Ok(())
     }
 
     /// Handles a `BlockResponse` message.
+<<<<<<< HEAD
 <<<<<<< HEAD
     fn block_response(&self, peer_ip: SocketAddr, blocks: Vec<Block<N>>) -> bool {
         // We do not need to explicitly sync here because insert_block_response, will wake up the sync task.
@@ -254,7 +263,14 @@ impl<N: Network, C: ConsensusStorage<N>> Inbound<N> for Client<N, C> {
             }
             Err(error) => bail!("{error}"),
 >>>>>>> 2493335da (feat(sync): dynamically fetch block locators at sync)
+=======
+    fn block_response(&self, peer_ip: SocketAddr, blocks: Vec<Block<N>>) -> Result<()> {
+        let result = self.sync.insert_block_responses(peer_ip, blocks);
+        if result.is_ok() {
+            self.sync.try_advancing_block_synchronization();
+>>>>>>> 6303b86fb (Redesign BlockSync to fully verify blockchain)
         }
+        result
     }
 
     /// Processes the block locators and sends back a `Pong` message.

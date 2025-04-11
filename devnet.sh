@@ -34,7 +34,7 @@ if [[ $build_binary == "y" ]]; then
   enable_telemetry=${enable_telemetry:-y}
 
   # Build command
-  build_cmd="cargo install --locked --path ."
+  build_cmd="cargo install --locked --path . --offline --debug"
 
   # Add the telemetry feature if requested
   if [[ $enable_telemetry == "y" ]]; then
@@ -94,6 +94,14 @@ for validator_index in "${validator_indices[@]}"; do
   window_index=$((validator_index + index_offset))
   metrics_port=$((validator_index + 9000))
 
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+  # We don't need to create a window for the first validator because the tmux
+  # session already starts with one window.
+=======
+>>>>>>> 490180100 (Redesign BlockSync to fully verify blockchain)
+>>>>>>> 6303b86fb (Redesign BlockSync to fully verify blockchain)
   if [ "$validator_index" -ne 0 ]; then
     # We don't need to create a window for the first validator because the tmux session already starts with one window.
     tmux new-window -t "devnet:$window_index" -n $name

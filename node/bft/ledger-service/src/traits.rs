@@ -15,9 +15,8 @@
 
 use snarkvm::{
     ledger::{
-        Block,
         PendingBlock,
-        Transaction,
+        block::{Block, Transaction},
         committee::Committee,
         narwhal::{BatchCertificate, Data, Transmission, TransmissionID},
         puzzle::{Solution, SolutionID},
@@ -115,11 +114,11 @@ pub trait LedgerService<N: Network>: Debug + Send + Sync {
     /// Checks that the subDAG in a given block is valid, but does not fully verify the block.
     fn check_block_subdag(&self, block: Block<N>, prefix: &[PendingBlock<N>]) -> Result<PendingBlock<N>>;
 
-    /// Takes a pending block and performs the remaining checks to full verify it.
-    fn check_block_content(&self, _block: PendingBlock<N>) -> Result<Block<N>>;
-
     /// Checks the given block is valid next block.
     fn check_next_block(&self, block: &Block<N>) -> Result<()>;
+
+    /// Checks the given block is valid next block.
+    fn check_block_content(&self, block: PendingBlock<N>) -> Result<Block<N>>;
 
     /// Returns a candidate for the next block in the ledger, using a committed subdag and its transmissions.
     #[cfg(feature = "ledger-write")]

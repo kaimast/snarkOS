@@ -18,8 +18,12 @@ mod router;
 use crate::traits::NodeInterface;
 
 use snarkos_account::Account;
+<<<<<<< HEAD
 use snarkos_node_bft::{events::DataBlocks, helpers::fmt_id, ledger_service::CoreLedgerService};
 use snarkos_node_cdn::CdnBlockSync;
+=======
+use snarkos_node_bft::ledger_service::CoreLedgerService;
+>>>>>>> 6303b86fb (Redesign BlockSync to fully verify blockchain)
 use snarkos_node_rest::Rest;
 use snarkos_node_router::{
     Heartbeat,
@@ -278,16 +282,30 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
                 }
 
                 // Perform the sync routine.
+<<<<<<< HEAD
                 _self.try_block_sync().await;
                 last_update = now;
+=======
+                if let Err(err) = _self.try_block_sync().await {
+                    error!("Failed to perform block sync - {err}");
+                }
+>>>>>>> 6303b86fb (Redesign BlockSync to fully verify blockchain)
             }
         }));
     }
 
     /// Client-side version of `snarkvm_node_bft::Sync::try_block_sync()`.
+<<<<<<< HEAD
     async fn try_block_sync(&self) {
         // Sleep briefly to avoid triggering spam detection.
         let _ = timeout(Self::SYNC_INTERVAL, self.sync.wait_for_update()).await;
+=======
+    async fn try_block_sync(&self) -> Result<()> {
+        // First see if any peers need removal.
+        let peers_to_ban = self.sync.remove_timed_out_block_requests();
+        for peer_ip in peers_to_ban {
+            trace!("Banning peer {peer_ip} for timing out on block requests");
+>>>>>>> 6303b86fb (Redesign BlockSync to fully verify blockchain)
 
         // For sanity, check that sync height is never below ledger height.
         // (if the ledger height is lower or equal to the current sync height, this is a noop)
@@ -306,18 +324,34 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
 
         // Prepare the block requests, if any.
         // In the process, we update the state of `is_block_synced` for the sync module.
+<<<<<<< HEAD
         let (block_requests, sync_peers) = self.sync.prepare_block_requests();
+=======
+        let block_requests = self.sync.prepare_block_requests()?;
+        trace!("Prepared {} block requests", block_requests.len());
+>>>>>>> 6303b86fb (Redesign BlockSync to fully verify blockchain)
 
         // If there are no block requests, but there are pending block responses in the sync pool,
         // then try to advance the ledger using these pending block responses.
         if block_requests.is_empty() && self.sync.has_pending_responses() {
             // Try to advance the ledger with the sync pool.
+<<<<<<< HEAD
             trace!("No block requests to send. Will process pending responses.");
             let has_new_blocks = match self.sync.try_advancing_block_synchronization().await {
                 Ok(val) => val,
                 Err(err) => {
                     error!("{err}");
                     return;
+=======
+            trace!("No block requests to send, but there are still pending block responses.");
+            self.sync.try_advancing_block_synchronization();
+        } else {
+            // Issues the block requests in batches.
+            for request in block_requests {
+                if !self.sync.send_block_request(self, request).await {
+                    // Stop if we fail to process a request.
+                    break;
+>>>>>>> 6303b86fb (Redesign BlockSync to fully verify blockchain)
                 }
             };
 
@@ -361,6 +395,8 @@ impl<N: Network, C: ConsensusStorage<N>> Client<N, C> {
             // Sleep to avoid triggering spam detection.
             tokio::time::sleep(BLOCK_REQUEST_BATCH_DELAY).await;
         }
+
+        Ok(())
     }
 
     /// Initializes solution verification.

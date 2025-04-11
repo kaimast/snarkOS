@@ -1286,8 +1286,8 @@ impl<N: Network> Primary<N> {
             loop {
                 tokio::time::sleep(Duration::from_millis(WORKER_PING_IN_MS)).await;
                 // If the primary is not synced, then do not broadcast the worker ping(s).
-                if !self_.sync.is_synced() {
-                    trace!("Skipping worker ping(s) {}", "(node is syncing)".dimmed());
+                if let Err(err) = self_.sync.check_synced() {
+                    trace!("Skipping worker ping(s) {}", format!("({err})").dimmed());
                     continue;
                 }
                 // Broadcast the worker ping(s).
@@ -1305,8 +1305,8 @@ impl<N: Network> Primary<N> {
                 tokio::time::sleep(Duration::from_millis(MAX_BATCH_DELAY_IN_MS)).await;
                 let current_round = self_.current_round();
                 // If the primary is not synced, then do not propose a batch.
-                if !self_.sync.is_synced() {
-                    debug!("Skipping batch proposal for round {current_round} {}", "(node is syncing)".dimmed());
+                if let Err(err) = self_.sync.check_synced() {
+                    debug!("Skipping batch proposal for round {current_round} {}", format!("({err})").dimmed());
                     continue;
                 }
                 // A best-effort attempt to skip the scheduled batch proposal if
@@ -1332,8 +1332,8 @@ impl<N: Network> Primary<N> {
         self.spawn(async move {
             while let Some((peer_ip, batch_propose)) = rx_batch_propose.recv().await {
                 // If the primary is not synced, then do not sign the batch.
-                if !self_.sync.is_synced() {
-                    trace!("Skipping a batch proposal from '{peer_ip}' {}", "(node is syncing)".dimmed());
+                if let Err(err) = self_.sync.check_synced() {
+                    trace!("Skipping a batch proposal from '{peer_ip}' {}", format!("({err})").dimmed());
                     continue;
                 }
                 // Spawn a task to process the proposed batch.
@@ -1374,8 +1374,8 @@ impl<N: Network> Primary<N> {
         self.spawn(async move {
             while let Some((peer_ip, batch_certificate)) = rx_batch_certified.recv().await {
                 // If the primary is not synced, then do not store the certificate.
-                if !self_.sync.is_synced() {
-                    trace!("Skipping a certified batch from '{peer_ip}' {}", "(node is syncing)".dimmed());
+                if let Err(err) = self_.sync.check_synced() {
+                    trace!("Skipping a certified batch from '{peer_ip}' {}", format!("{err}").dimmed());
                     continue;
                 }
                 // Spawn a task to process the batch certificate.
@@ -1406,8 +1406,8 @@ impl<N: Network> Primary<N> {
                 // Sleep briefly.
                 tokio::time::sleep(Duration::from_millis(MAX_BATCH_DELAY_IN_MS)).await;
                 // If the primary is not synced, then do not increment to the next round.
-                if !self_.sync.is_synced() {
-                    trace!("Skipping round increment {}", "(node is syncing)".dimmed());
+                if let Err(err) = self_.sync.check_synced() {
+                    trace!("Skipping round increment {}", format!("({err})").dimmed());
                     continue;
                 }
                 // Attempt to increment to the next round.
@@ -2422,7 +2422,7 @@ mod tests {
         // The primary will only consider itself synced if we received
         // block locators from a peer.
         primary.sync.test_update_peer_locators(peer_ip, sample_block_locators(0)).unwrap();
-        primary.sync.try_block_sync().await;
+        primary.sync.try_block_sync().await.unwrap();
 
         // Try to process the batch proposal from the peer, should succeed.
         assert!(
@@ -2535,7 +2535,7 @@ mod tests {
         // The author must be known to resolver to pass propose checks.
         primary.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
         // The primary must be considered synced.
-        primary.sync.try_block_sync().await;
+        primary.sync.try_block_sync().await.unwrap();
 
         // Try to process the batch proposal from the peer, should error.
         assert!(
@@ -2580,7 +2580,7 @@ mod tests {
         // The author must be known to resolver to pass propose checks.
         primary.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
         // The primary must be considered synced.
-        primary.sync.try_block_sync().await;
+        primary.sync.try_block_sync().await.unwrap();
 
         // Try to process the batch proposal from the peer, should error.
         assert!(
@@ -2636,7 +2636,7 @@ mod tests {
         // The author must be known to resolver to pass propose checks.
         primary.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
         // The primary must be considered synced.
-        primary.sync.try_block_sync().await;
+        primary.sync.try_block_sync().await.unwrap();
 
         // Try to process the batch proposal from the peer, should error.
         assert!(
@@ -2684,7 +2684,6 @@ mod tests {
         primary_v4.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
         primary_v5.gateway.resolver().insert_peer(peer_ip, peer_ip, peer_account.1.address());
 
-        // primary v4 must be considered synced.
         primary_v4.sync.test_update_peer_locators(peer_ip, sample_block_locators(0)).unwrap();
         primary_v4.sync.try_block_sync().await;
 

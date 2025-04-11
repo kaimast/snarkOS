@@ -16,9 +16,8 @@
 use crate::LedgerService;
 use snarkvm::{
     ledger::{
-        Block,
         PendingBlock,
-        Transaction,
+        block::{Block, Transaction},
         committee::Committee,
         narwhal::{BatchCertificate, Data, Subdag, Transmission, TransmissionID},
         puzzle::{Solution, SolutionID},

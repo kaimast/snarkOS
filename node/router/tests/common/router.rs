@@ -190,6 +190,7 @@ impl<N: Network> Inbound<N> for TestRouter<N> {
     /// Handles a `BlockResponse` message.
     fn block_response(&self, _peer_ip: SocketAddr, _blocks: Vec<Block<N>>) -> Result<()> {
         Ok(())
+<<<<<<< HEAD
     }
 
     /// Handles a `BlockRequest` message.
@@ -200,6 +201,8 @@ impl<N: Network> Inbound<N> for TestRouter<N> {
     /// Handles a `BlockResponse` message.
     async fn block_locators_response(&self, _peer_ip: SocketAddr, _locators: BlockLocators<N>) -> Result<()> {
         Ok(())
+=======
+>>>>>>> 6303b86fb (Redesign BlockSync to fully verify blockchain)
     }
 
     /// Handles an `Ping` message.

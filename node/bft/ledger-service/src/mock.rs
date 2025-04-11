@@ -16,9 +16,14 @@
 use crate::{LedgerService, fmt_id};
 use snarkvm::{
     ledger::{
+<<<<<<< HEAD
         Block,
         PendingBlock,
         Transaction,
+=======
+        PendingBlock,
+        block::{Block, Transaction},
+>>>>>>> 6303b86fb (Redesign BlockSync to fully verify blockchain)
         committee::Committee,
         narwhal::{BatchCertificate, Data, Subdag, Transmission, TransmissionID},
         puzzle::{Solution, SolutionID},
@@ -224,6 +229,16 @@ impl<N: Network> LedgerService<N> for MockLedgerService<N> {
     /// Checks the given block is valid next block.
     fn check_next_block(&self, _block: &Block<N>) -> Result<()> {
         Ok(())
+    }
+
+    /// Checks the given block is valid next block.
+    fn check_block_subdag(&self, _block: Block<N>, _pending_blocks: &[PendingBlock<N>]) -> Result<PendingBlock<N>> {
+        unimplemented!();
+    }
+
+    /// Checks the given block is valid next block.
+    fn check_block_content(&self, _block: PendingBlock<N>) -> Result<Block<N>> {
+        unimplemented!();
     }
 
     /// Returns a candidate for the next block in the ledger, using a committed subdag and its transmissions.

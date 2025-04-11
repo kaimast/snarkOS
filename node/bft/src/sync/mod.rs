@@ -18,7 +18,6 @@ use crate::{
     MAX_FETCH_TIMEOUT_IN_MS,
     PRIMARY_PING_IN_MS,
     Transport,
-    events::DataBlocks,
     helpers::{BFTSender, Pending, Storage, SyncReceiver, fmt_id, max_redundant_requests},
     spawn_blocking,
 };
@@ -38,7 +37,6 @@ use locktick::{parking_lot::Mutex, tokio::Mutex as TMutex};
 #[cfg(not(feature = "locktick"))]
 use parking_lot::Mutex;
 #[cfg(not(feature = "serial"))]
-use rayon::prelude::*;
 use std::{
     collections::{HashMap, VecDeque},
     future::Future,
@@ -138,24 +136,37 @@ impl<N: Network> Sync<N> {
     ///
     /// Responses to block requests will eventually be processed by `Self::try_advancing_block_synchronization`.
     #[inline]
-    async fn send_block_requests(
-        &self,
+    pub async fn issue_block_requests(&self) -> Result<()> {
+        // First see if any peers need removal
+        let peers_to_ban = self.block_sync.remove_timed_out_block_requests();
+        for peer_ip in peers_to_ban {
+            trace!("Banning peer {peer_ip} for timing out on block requests");
 
-        block_requests: Vec<(u32, PrepareSyncRequest<N>)>,
-        sync_peers: IndexMap<SocketAddr, BlockLocators<N>>,
-    ) {
-        trace!("Prepared {num_requests} block requests", num_requests = block_requests.len());
+            let tcp = self.gateway.tcp().clone();
+            tcp.banned_peers().update_ip_ban(peer_ip.ip());
+
+            tokio::spawn(async move {
+                tcp.disconnect(peer_ip).await;
+            });
+        }
+
+        // Prepare the block requests, if any.
+        // In the process, we update the state of `is_block_synced` for the sync module.
+        let block_requests = self.block_sync.prepare_block_requests()?;
+        trace!("Prepared {} block requests", block_requests.len());
 
         // Sends the block requests to the sync peers.
-        for requests in block_requests.chunks(DataBlocks::<N>::MAXIMUM_NUMBER_OF_BLOCKS as usize) {
-            if !self.block_sync.send_block_requests(&self.gateway, &sync_peers, requests).await {
-                // Stop if we fail to process a batch of requests.
+        for request in block_requests {
+            if !self.block_sync.send_block_request(&self.gateway, request).await {
+                // Stop if we fail to process a request.
                 break;
             }
 
             // Sleep to avoid triggering spam detection.
             tokio::time::sleep(BLOCK_REQUEST_BATCH_DELAY).await;
         }
+
+        Ok(())
     }
 
     /// Starts the sync module.
@@ -307,35 +318,21 @@ impl<N: Network> Sync<N> {
     ///
     /// This is called periodically by a tokio background task spawned in `Self::run`.
     /// Some unit tests also call this function directly to manually trigger block synchronization.
-    pub(crate) async fn try_block_sync(&self) -> bool {
-        // Check if any existing requests can be removed.
-        // We should do this even if we cannot block sync, to ensure
-        // there are no dangling block requests.
-        let new_requests = self.block_sync.handle_block_request_timeouts(&self.gateway);
-        if let Some((sync_peers, requests)) = new_requests {
-            self.send_block_requests(sync_peers, requests).await;
+    pub(crate) async fn try_block_sync(&self) -> Result<()> {
+        self.issue_block_requests().await?;
+
+        // Sync the storage with the blocks.
+        if let Err(err) = self.try_advancing_block_synchronization().await {
+            bail!("Block synchronization failed - {err}");
         }
 
-        // Do not attempt to sync if there are no blocks to sync.
-        // This prevents redundant log messages and performing unnecessary computation.
-        if !self.block_sync.can_block_sync() {
-            trace!("No blocks to sync");
-            return false;
-        }
+        /*
+        // If the node is synced, clear the `latest_block_responses`.
+        if self.is_synced() {
+            self.latest_block_responses.lock().await.clear();
+        }*/
 
-        // Prepare the block requests, if any.
-        // In the process, we update the state of `is_block_synced` for the sync module.
-        let (sync_peers, requests) = self.block_sync.prepare_block_requests();
-        self.send_block_requests(sync_peers, requests).await;
-
-        // Sync the storage with the blocks
-        match self.try_advancing_block_synchronization().await {
-            Ok(new_blocks) => new_blocks,
-            Err(err) => {
-                error!("Block synchronization failed - {err}");
-                false
-            }
-        }
+        Ok(())
     }
 }
 
@@ -560,213 +557,47 @@ impl<N: Network> Sync<N> {
         cleanup(start_height, current_height, None)
     }
 
-    /// Syncs the ledger with the given block without updating the BFT.
-    ///
-    /// This is only used by `[Self::try_advancing_block_synchronization`].
-    async fn sync_ledger_with_block_without_bft(&self, block: Block<N>) -> Result<()> {
+    /// Syncs the storage with the given block.
+    //
+    /// This must be called *after* the block was added to the ledger.
+    /// It also updates the DAG because the synced block might be within GC.
+    async fn sync_storage_with_block(&self, block: &Block<N>) -> Result<()> {
         // Acquire the sync lock.
         let _lock = self.sync_lock.lock().await;
 
-        let self_ = self.clone();
-        tokio::task::spawn_blocking(move || {
-            // Check the next block.
-            self_.ledger.check_next_block(&block)?;
-            // Attempt to advance to the next block.
-            self_.ledger.advance_to_next_block(&block)?;
+        // If the block authority is a sub-DAG, then sync the batch certificates with the block.
+        // Note that the block authority is always a sub-DAG in production;
+        // beacon signatures are only used for testing,
+        // and as placeholder (irrelevant) block authority in the genesis block.
+        if let Authority::Quorum(subdag) = block.authority() {
+            // Reconstruct the unconfirmed transactions.
+            let unconfirmed_transactions = cfg_iter!(block.transactions())
+                .filter_map(|tx| {
+                    tx.to_unconfirmed_transaction().map(|unconfirmed| (unconfirmed.id(), unconfirmed)).ok()
+                })
+                .collect::<HashMap<_, _>>();
 
-            // Sync the height with the block.
-            self_.storage.sync_height_with_block(block.height());
-            // Sync the round with the block.
-            self_.storage.sync_round_with_block(block.round());
-            // Mark the block height as processed in block_sync.
-            self_.block_sync.remove_block_response(block.height());
+            // Iterate over the certificates.
+            for certificates in subdag.values().cloned() {
+                cfg_into_iter!(certificates.clone()).for_each(|certificate| {
+                    // Sync the batch certificate with the block.
+                    self.storage.sync_certificate_with_block(block, certificate.clone(), &unconfirmed_transactions);
+                });
 
-            Ok(())
-        })
-        .await?
-    }
-
-    /// Helper function for [`Self::sync_storage_with_block`].
-    /// It syncs the batch certificates with the BFT, if the block's authority is a sub-DAG.
-    ///
-    /// Note that the block authority is always a sub-DAG in production; beacon signatures are only used for testing,
-    /// and as placeholder (irrelevant) block authority in the genesis block.i
-    async fn add_block_subdag_to_bft(&self, block: &Block<N>) -> Result<()> {
-        // Nothing to do if this is a beacon block
-        let Authority::Quorum(subdag) = block.authority() else {
-            return Ok(());
-        };
-
-        // Reconstruct the unconfirmed transactions.
-        let unconfirmed_transactions = cfg_iter!(block.transactions())
-            .filter_map(|tx| tx.to_unconfirmed_transaction().map(|unconfirmed| (unconfirmed.id(), unconfirmed)).ok())
-            .collect::<HashMap<_, _>>();
-
-        // Iterate over the certificates.
-        for certificates in subdag.values().cloned() {
-            cfg_into_iter!(certificates.clone()).for_each(|certificate| {
-                // Sync the batch certificate with the block.
-                self.storage.sync_certificate_with_block(block, certificate.clone(), &unconfirmed_transactions);
-            });
-
-            // Sync the BFT DAG with the certificates.
-            for certificate in certificates {
-                // If a BFT sender was provided, send the certificate to the BFT.
-                // For validators, BFT spawns a receiver task in `BFT::start_handlers`.
-                if let Some(bft_sender) = self.bft_sender.get() {
-                    // Await the callback to continue.
-                    if let Err(err) = bft_sender.send_sync_bft(certificate).await {
-                        bail!("Failed to sync certificate - {err}");
-                    };
+                // Sync the BFT DAG with the certificates.
+                for certificate in certificates {
+                    // If a BFT sender was provided, send the certificate to the BFT.
+                    // For validators, BFT spawns a receiver task in `BFT::start_handlers`.
+                    if let Some(bft_sender) = self.bft_sender.get() {
+                        // Await the callback to continue.
+                        if let Err(err) = bft_sender.send_sync_bft(certificate).await {
+                            bail!("Failed to sync certificate - {err}");
+                        };
+                    }
                 }
-            }
-        }
-        Ok(())
-    }
-
-    /// Helper function for [`Self::sync_storage_with_block`].
-    ///
-    /// It checks that successor of a given block contains enough votes to commit it.
-    /// This can only return `Ok(true)` if the certificates of the block's successor were added to the storage.
-    fn is_block_availability_threshold_reached(&self, block: &PendingBlock<N>) -> Result<bool> {
-        // Fetch the leader certificate and the relevant rounds.
-        let leader_certificate = match block.authority() {
-            Authority::Quorum(subdag) => subdag.leader_certificate().clone(),
-            _ => bail!("Received a block with an unexpected authority type."),
-        };
-        let commit_round = leader_certificate.round();
-        let certificate_round =
-            commit_round.checked_add(1).ok_or_else(|| anyhow!("Integer overflow on round number"))?;
-
-        // Get the committee lookback for the round just after the leader.
-        let certificate_committee_lookback = self.ledger.get_committee_lookback_for_round(certificate_round)?;
-        // Retrieve all of the certificates for the round just after the leader.
-        let certificates = self.storage.get_certificates_for_round(certificate_round);
-        // Construct a set over the authors, at the round just after the leader,
-        // who included the leader's certificate in their previous certificate IDs.
-        let authors = certificates
-            .iter()
-            .filter_map(|c| match c.previous_certificate_ids().contains(&leader_certificate.id()) {
-                true => Some(c.author()),
-                false => None,
-            })
-            .collect();
-
-        // Check if the leader is ready to be committed.
-        if certificate_committee_lookback.is_availability_threshold_reached(&authors) {
-            trace!(
-                "Block {hash} at height {height} has reached availability threshold",
-                hash = block.hash(),
-                height = block.height()
-            );
-            Ok(true)
-        } else {
-            Ok(false)
-        }
-    }
-
-    /// Advances the ledger by the given block and updates the storage accordingly.
-    ///
-    /// This also updates the DAG, and uses the DAG to ensure that the block's leader certificate
-    /// meets the voter availability threshold (i.e. > f voting stake)
-    /// or is reachable via a DAG path from a later leader certificate that does.
-    /// Since performing this check requires DAG certificates from later blocks,
-    /// the block is stored in `Sync::pending_blocks`,
-    /// and its addition to the ledger is deferred until the check passes.
-    /// Several blocks may be stored in `Sync::pending_blocks`
-    /// before they can be all checked and added to the ledger.
-    ///
-    /// # Usage
-    /// This function assumes that blocks are passed in order, i.e.,
-    /// that the given block is a direct successor of the block that was last passed to this function.
-    async fn sync_storage_with_block(&self, new_block: Block<N>) -> Result<()> {
-        // Acquire the sync lock.
-        let _lock = self.sync_lock.lock().await;
-
-        // If this block has already been processed, return early.
-        // TODO(kaimast): Should we remove the response here?
-        if self.ledger.contains_block_height(new_block.height()) {
-            debug!(
-                "Ledger is already synced with block at height {height}. Will not sync.",
-                height = new_block.height()
-            );
-            return Ok(());
-        }
-
-        // Acquire the pending blocks lock.
-        let mut pending_blocks = self.pending_blocks.lock().await;
-
-        if let Some(tail) = pending_blocks.back() {
-            if tail.height() >= new_block.height() {
-                debug!(
-                    "A unconfirmed block is queued already for height {height}. \
-                    Will not sync.",
-                    height = new_block.height()
-                );
-                return Ok(());
             }
 
             ensure!(tail.height() + 1 == new_block.height(), "Got an out-of-order block");
-        }
-
-        // Fetch the latest block height.
-        let ledger_block_height = self.ledger.latest_block_height();
-
-        // Clear any older pending blocks.
-        // TODO(kaimast): ensure there are no dangling block requests
-        while let Some(pending_block) = pending_blocks.front() {
-            if pending_block.height() > ledger_block_height {
-                break;
-            }
-
-            pending_blocks.pop_front();
-        }
-
-        // Get a list of contiguous blocks from the latest block responses.
-        let new_block = self.ledger.check_block_subdag(new_block, pending_blocks.make_contiguous())?;
-
-        // Append the new block to the set of pending blocks and add its certificates to the storage.
-        self.add_block_subdag_to_bft(&new_block).await?;
-        pending_blocks.push_back(new_block);
-
-        // Now, figure out if and which pending block we can commit.
-        // To do this effectively and because commits are transitive,
-        // we iterate in reverse so that we can stop at the first successful check.
-        //
-        // Note, that if the storage already contains certificates for the round after new block,
-        // the availability threshold for the new block could also be reached.
-        let mut commit_height = None;
-        for block in pending_blocks.iter().rev() {
-            if self.is_block_availability_threshold_reached(block)? {
-                commit_height = Some(block.height());
-                break;
-            }
-        }
-
-        if let Some(commit_height) = commit_height {
-            let start_height = ledger_block_height + 1;
-            ensure!(commit_height >= start_height, "Invalid commit height");
-            let num_blocks = (commit_height - start_height + 1) as usize;
-
-            // Create a more detailed log message if we are committing more than one block at a time.
-            if num_blocks > 1 {
-                trace!(
-                    "Attempting to commit {chain_length} pending block(s) starting at height {start_height}.",
-                    chain_length = pending_blocks.len(),
-                );
-            }
-
-            for pending_block in pending_blocks.drain(0..num_blocks) {
-                let hash = pending_block.hash();
-                let height = pending_block.height();
-                match self.ledger.check_block_content(pending_block) {
-                    Ok(block) => {
-                        trace!("Adding pending block {hash} at height {height} to the ledger");
-                        self.ledger.advance_to_next_block(&block)?;
-                    }
-                    Err(err) => bail!("Failed to check contents of pending block {hash} at height {height}: {err}"),
-                }
-            }
         }
 
         Ok(())
@@ -784,6 +615,19 @@ impl<N: Network> Sync<N> {
         }
 
         self.block_sync.is_block_synced()
+    }
+
+    /// Like `is_synced` but returns more information.
+    pub fn check_synced(&self) -> Result<()> {
+        if self.gateway.number_of_connected_peers() == 0 {
+            bail!("Not connected to any other validators yet");
+        }
+
+        if !self.block_sync.is_block_synced() {
+            bail!("Validator is still syncing");
+        }
+
+        Ok(())
     }
 
     /// Returns the number of blocks the node is behind the greatest peer height.

@@ -24,6 +24,8 @@ pub use snarkos_node_sync_locators as locators;
 mod ping;
 pub use ping::Ping;
 
+mod pending_chain;
+
 mod block_sync;
 pub use block_sync::*;
 

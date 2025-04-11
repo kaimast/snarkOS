@@ -90,7 +90,7 @@ optional = true
 workspace = true
 
 [dependencies.rand]
-version = "0.8"
+workspace = true
 
 [dependencies.rayon]
 version = "1"
@@ -100,12 +100,10 @@ version = "0.10"
 default-features = false
 
 [dependencies.snarkos-account]
-path = "../../account"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkos-node-bft-events]
-path = "./events"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkos-node-bft-ledger-service]
 workspace = true
@@ -119,8 +117,7 @@ features = [ "memory" ]
 workspace = true
 
 [dependencies.snarkos-node-tcp]
-path = "../tcp"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkvm]
 workspace = true

@@ -34,8 +34,10 @@ features = [ "serde", "rayon" ]
 version = "1"
 
 [dependencies.snarkos-node-sync-locators]
-path = "../../sync/locators"
-version = "=3.8.0"
+workspace = true
+
+[dependencies.snarkos-node-sync-communication-service]
+workspace = true
 
 [dependencies.snarkvm]
 workspace = true
@@ -62,5 +64,5 @@ workspace = true
 version = "0.3"
 
 [dev-dependencies.snarkos-node-sync-locators]
-path = "../../sync/locators"
+workspace = true
 features = [ "test" ]

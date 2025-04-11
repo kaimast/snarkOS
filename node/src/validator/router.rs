@@ -190,11 +190,6 @@ impl<N: Network, C: ConsensusStorage<N>> Inbound<N> for Validator<N, C> {
     }
 
     /// Handles a `BlockResponse` message.
-<<<<<<< HEAD
-    fn block_response(&self, peer_ip: SocketAddr, _blocks: Vec<Block<N>>) -> bool {
-        warn!("Received a block response through P2P, not BFT, from {peer_ip}");
-        false
-=======
     fn block_response(&self, peer_ip: SocketAddr, blocks: Vec<Block<N>>) -> Result<()> {
         match self.sync.insert_block_responses(peer_ip, blocks) {
             Ok(()) => {
@@ -205,7 +200,8 @@ impl<N: Network, C: ConsensusStorage<N>> Inbound<N> for Validator<N, C> {
                 bail!("{error}")
             }
         }
->>>>>>> 2493335da (feat(sync): dynamically fetch block locators at sync)
+
+        Ok(())
     }
 
     /// Processes a ping message from a client (or prover) and sends back a `Pong` message.

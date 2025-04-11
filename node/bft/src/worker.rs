@@ -560,8 +560,13 @@ mod tests {
     use snarkvm::{
         console::{network::Network, types::Field},
         ledger::{
+<<<<<<< HEAD
             Block,
             PendingBlock,
+=======
+            PendingBlock,
+            block::Block,
+>>>>>>> 6303b86fb (Redesign BlockSync to fully verify blockchain)
             committee::Committee,
             narwhal::{BatchCertificate, Subdag, Transmission, TransmissionID},
             snarkvm_ledger_test_helpers::sample_execution_transaction_with_fee,
@@ -630,6 +635,8 @@ mod tests {
             fn check_block_subdag(&self, _block: Block<N>, _prefix: &[PendingBlock<N>]) -> Result<PendingBlock<N>>;
             fn check_block_content(&self, _block: PendingBlock<N>) -> Result<Block<N>>;
             fn check_next_block(&self, block: &Block<N>) -> Result<()>;
+            fn check_block_subdag(&self, _block: Block<N>, _pending_blocks: &[PendingBlock<N>]) -> Result<PendingBlock<N>>;
+            fn check_block_content(&self, _block: PendingBlock<N>) -> Result<Block<N>>;
             fn prepare_advance_to_next_quorum_block(
                 &self,
                 subdag: Subdag<N>,

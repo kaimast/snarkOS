@@ -89,6 +89,10 @@ default-features = false
 version = "1"
 default-features = false
 
+[workspace.dependencies.rand]
+version = "0.8"
+default-features = false
+
 [workspace.dependencies.parking_lot]
 version = "0.12"
 
@@ -104,6 +108,26 @@ version = "0.3"
 
 [workspace.dependencies.test-strategy]
 version = "0.4"
+
+[workspace.dependencies.snarkos-account]
+path = "account"
+version = "=3.8.0"
+
+[workspace.dependencies.snarkos-cli]
+path = "cli"
+version = "=3.8.0"
+
+[workspace.dependencies.snarkos-display]
+path = "display"
+version = "=3.8.0"
+
+[workspace.dependencies.snarkos-node-bft]
+path = "node/bft"
+version = "=3.8.0"
+
+[workspace.dependencies.snarkos-node-bft-events]
+path = "node/bft/events"
+version = "=3.8.0"
 
 [workspace.dependencies.snarkos-node-bft-storage-service]
 path = "node/bft/storage-service"
@@ -121,6 +145,10 @@ version = "=3.8.0"
 path = "node/cdn"
 version = "=3.8.0"
 
+[workspace.dependencies.snarkos-node-rest]
+path = "node/rest"
+version = "=3.8.0"
+
 [workspace.dependencies.snarkos-node-router]
 path = "node/router"
 version = "=3.8.0"
@@ -135,6 +163,18 @@ version = "=3.8.0"
 
 [workspace.dependencies.snarkos-node-sync-locators]
 path = "node/sync/locators"
+version = "=3.8.0"
+
+[workspace.dependencies.snarkos-node-tcp]
+path = "node/tcp"
+version = "=3.8.0"
+
+[workspace.dependencies.snarkos-node-metrics]
+path = "node/metrics"
+version = "=3.8.0"
+
+[workspace.dependencies.snarkos-node]
+path = "node"
 version = "=3.8.0"
 
 [[bin]]
@@ -183,20 +223,16 @@ version = "0.3"
 optional = true
 
 [dependencies.snarkos-account]
-path = "./account"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkos-cli]
-path = "./cli"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkos-node]
-path = "./node"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkos-node-bft]
-path = "./node/bft"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkos-node-cdn]
 workspace = true
@@ -205,23 +241,20 @@ workspace = true
 workspace = true
 
 [dependencies.snarkos-node-metrics]
-path = "./node/metrics"
-version = "=3.8.0"
+workspace = true
 optional = true
 
 [dependencies.snarkos-node-router]
 workspace = true
 
 [dependencies.snarkos-node-rest]
-path = "./node/rest"
-version = "=3.8.0"
+workspace = true
 
 [dependencies.snarkos-node-sync]
 workspace = true
 
 [dependencies.snarkos-node-tcp]
-path = "./node/tcp"
-version = "=3.8.0"
+workspace = true
 
 [target.'cfg(all(target_os = "linux", target_arch = "x86_64"))'.dependencies]
 tikv-jemallocator = "0.5"
@@ -238,7 +271,7 @@ version = "0.8"
 features = [ "git2" ]
 
 [build-dependencies.toml]
-version = "0.8"
+version = "0.9"
 
 [build-dependencies.walkdir]
 version = "2"

@@ -16,10 +16,9 @@
 use crate::{LedgerService, fmt_id, spawn_blocking};
 use snarkvm::{
     ledger::{
-        Block,
         Ledger,
         PendingBlock,
-        Transaction,
+        block::{Block, Transaction},
         committee::Committee,
         narwhal::{BatchCertificate, Data, Subdag, Transmission, TransmissionID},
         puzzle::{Solution, SolutionID},
