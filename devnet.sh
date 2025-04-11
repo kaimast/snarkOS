@@ -20,8 +20,12 @@ build_binary=${build_binary:-y}
 read -p "Do you want to clear the existing ledger history? (y/n, default: n): " clear_ledger
 clear_ledger=${clear_ledger:-n}
 
+<<<<<<< HEAD
 # Log verbosity is set to 1 (DEBUG) by default.
 verbosity=1
+=======
+verbosity=3
+>>>>>>> 490180100 (Redesign BlockSync to fully verify blockchain)
 
 if [[ $build_binary == "y" ]]; then
   # Ask the user if they want to enable validator telemetry
@@ -29,7 +33,7 @@ if [[ $build_binary == "y" ]]; then
   enable_telemetry=${enable_telemetry:-y}
 
   # Build command
-  build_cmd="cargo install --locked --path ."
+  build_cmd="cargo install --locked --path . --offline --debug"
 
   # Add the telemetry feature if requested
   if [[ $enable_telemetry == "y" ]]; then
@@ -84,8 +88,11 @@ for validator_index in "${validator_indices[@]}"; do
   log_file="$log_dir/$name.log"
   window_index=$((validator_index + index_offset))
 
+<<<<<<< HEAD
   # We don't need to create a window for the first validator because the tmux
   # session already starts with one window.
+=======
+>>>>>>> 490180100 (Redesign BlockSync to fully verify blockchain)
   if [ "$validator_index" -ne 0 ]; then
     # Create a new window with a unique name
     tmux new-window -t "devnet:$window_index" -n $name
