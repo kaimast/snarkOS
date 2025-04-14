@@ -74,6 +74,9 @@ impl<N: Network> Deref for Router<N> {
     }
 }
 
+/// Extra information added to log messages.
+const CONTEXT: &str = "[P2P]";
+
 pub struct InnerRouter<N: Network> {
     /// The TCP stack.
     tcp: Tcp,
@@ -180,7 +183,7 @@ impl<N: Network> Router<N> {
                 // If the connection was not allowed, log the error.
                 Err(error) => {
                     router.connecting_peers.lock().remove(&peer_ip);
-                    warn!("Unable to connect to '{peer_ip}' - {error}");
+                    warn!("{CONTEXT} Unable to connect to '{peer_ip}' - {error}");
                     false
                 }
             }
@@ -188,28 +191,34 @@ impl<N: Network> Router<N> {
     }
 
     /// Ensure we are allowed to connect to the given peer.
+    ///
+    /// If this returns Ok(()) the given `peer_ip` will have been added to the set of connecting peers.
     fn check_connection_attempt(&self, peer_ip: SocketAddr) -> Result<()> {
         // Ensure the peer IP is not this node.
         if self.is_local_ip(&peer_ip) {
-            bail!("Dropping connection attempt to '{peer_ip}' (attempted to self-connect)")
+            bail!("{CONTEXT} Dropping connection attempt to '{peer_ip}' - node attempted to connect to itself")
         }
         // Ensure the node does not surpass the maximum number of peer connections.
         if self.number_of_connected_peers() >= self.max_connected_peers() {
-            bail!("Dropping connection attempt to '{peer_ip}' (maximum peers reached)")
+            bail!(
+                "{CONTEXT} Dropping connection attempt to '{peer_ip}' - maximum number of peers reached (there are {} connections already, the limit is {})",
+                self.number_of_connected_peers(),
+                self.max_connected_peers(),
+            )
         }
         // Ensure the node is not already connected to this peer.
         if self.is_connected(&peer_ip) {
-            bail!("Dropping connection attempt to '{peer_ip}' (already connected)")
+            bail!("{CONTEXT} Dropping connection attempt to '{peer_ip}' - already connected to this peer")
         }
         // Ensure the peer is not restricted.
         if self.is_restricted(&peer_ip) {
-            bail!("Dropping connection attempt to '{peer_ip}' (restricted)")
+            bail!("{CONTEXT} Dropping connection attempt to '{peer_ip}' - peer is restricted")
         }
         // Ensure the node is not already connecting to this peer.
         match self.connecting_peers.lock().entry(peer_ip) {
             Entry::Vacant(entry) => entry.insert(None),
             Entry::Occupied(_) => {
-                bail!("Dropping connection attempt to '{peer_ip}' (already shaking hands as the initiator)")
+                bail!("{CONTEXT} Dropping connection attempt to '{peer_ip}'  - already shaking hands as the initiator)")
             }
         };
         Ok(())
@@ -225,7 +234,7 @@ impl<N: Network> Router<N> {
                 // FIXME (ljedrz): this shouldn't be necessary; it's a double-check
                 //  that the higher-level collection is cleaned up after the lower-level disconnect.
                 if router.is_connected(&peer_ip) && !router.tcp.is_connected(peer_addr) {
-                    warn!("Disconnecting with fallback safety (report this to @ljedrz)");
+                    warn!("{CONTEXT} Disconnecting with fallback safety (report this to @ljedrz)");
                     router.remove_connected_peer(peer_ip);
                 }
                 disconnected

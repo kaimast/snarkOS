@@ -396,7 +396,7 @@ impl<N: Network> Primary<N> {
             // Iterate through the non-signers.
             for address in proposal.nonsigners(&self.ledger.get_committee_lookback_for_round(proposal.round())?) {
                 // Resolve the address to the peer IP.
-                match self.gateway.resolver().get_peer_ip_for_address(address) {
+                match self.gateway.resolver().get_peer_ip_for_address(&address) {
                     // Resend the batch proposal to the validator for signing.
                     Some(peer_ip) => {
                         let (gateway, event_, round) = (self.gateway.clone(), event.clone(), proposal.round());
@@ -699,7 +699,7 @@ impl<N: Network> Primary<N> {
         let batch_author = batch_header.author();
 
         // Ensure the batch proposal is from the validator.
-        match self.gateway.resolver().get_address(peer_ip) {
+        match self.gateway.resolver().get_address(&peer_ip) {
             // If the peer is a validator, then ensure the batch proposal is from the validator.
             Some(address) => {
                 if address != batch_author {
@@ -954,7 +954,7 @@ impl<N: Network> Primary<N> {
         let signer = signature.to_address();
 
         // Ensure the batch signature is signed by the validator.
-        if self.gateway.resolver().get_address(peer_ip).map_or(true, |address| address != signer) {
+        if self.gateway.resolver().get_address(&peer_ip).map_or(true, |address| address != signer) {
             // Proceed to disconnect the validator.
             self.gateway.disconnect(peer_ip);
             bail!("Malicious peer - batch signature is from a different validator ({signer})");
@@ -993,7 +993,7 @@ impl<N: Network> Primary<N> {
                     // Retrieve the committee lookback for the round.
                     let committee_lookback = self_.ledger.get_committee_lookback_for_round(proposal.round())?;
                     // Retrieve the address of the validator.
-                    let Some(signer) = self_.gateway.resolver().get_address(peer_ip) else {
+                    let Some(signer) = self_.gateway.resolver().get_address(&peer_ip) else {
                         bail!("Signature is from a disconnected validator");
                     };
                     // Add the signature to the batch.
@@ -1049,7 +1049,7 @@ impl<N: Network> Primary<N> {
         certificate: BatchCertificate<N>,
     ) -> Result<()> {
         // Ensure the batch certificate is from an authorized validator.
-        if !self.gateway.is_authorized_validator_ip(peer_ip) {
+        if !self.gateway.is_authorized_validator_ip(&peer_ip) {
             // Proceed to disconnect the validator.
             self.gateway.disconnect(peer_ip);
             bail!("Malicious peer - Received a batch certificate from an unauthorized validator IP ({peer_ip})");

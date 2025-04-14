@@ -19,6 +19,7 @@ use locktick::parking_lot::RwLock;
 use parking_lot::RwLock;
 use std::{collections::HashMap, net::SocketAddr};
 
+/// Converts betweeen a peers listener address and its connection-specific (ambiguous) address.
 #[derive(Debug)]
 pub struct Resolver {
     /// The map of the listener address to (ambiguous) peer address.

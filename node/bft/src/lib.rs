@@ -43,6 +43,7 @@ pub use sync::*;
 mod worker;
 pub use worker::*;
 
+/// Extra information added to log messages.
 pub const CONTEXT: &str = "[MemoryPool]";
 
 /// The port on which the memory pool listens for incoming connections.

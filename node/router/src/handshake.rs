@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use super::CONTEXT;
 use crate::{
     NodeType,
     Peer,
@@ -302,29 +303,24 @@ impl<N: Network> Router<N> {
     }
 
     /// Ensure the peer is allowed to connect.
+    ///
+    /// If this function returns Ok(()), the given `peer_ip` will have been added to the set of connecting peers.
     fn ensure_peer_is_allowed(&self, peer_ip: SocketAddr) -> Result<()> {
         // Ensure the peer IP is not this node.
         if self.is_local_ip(&peer_ip) {
-            bail!("Dropping connection request from '{peer_ip}' (attempted to self-connect)")
+            bail!("{CONTEXT} Dropping connection request from '{peer_ip}' - node attempted to connec to itself");
         }
-        // Ensure the node is not already connecting to this peer.
-        match self.connecting_peers.lock().entry(peer_ip) {
-            Entry::Vacant(entry) => entry.insert(None),
-            Entry::Occupied(_) => {
-                bail!("Dropping connection request from '{peer_ip}' (already shaking hands as the initiator)")
-            }
-        };
         // Ensure the node is not already connected to this peer.
         if self.is_connected(&peer_ip) {
-            bail!("Dropping connection request from '{peer_ip}' (already connected)")
+            bail!("{CONTEXT} Dropping connection request from '{peer_ip}' - already connected to this peer");
         }
         // Only allow trusted peers to connect if allow_external_peers is set
         if !self.allow_external_peers() && !self.is_trusted(&peer_ip) {
-            bail!("Dropping connection request from '{peer_ip}' (untrusted)")
+            bail!("{CONTEXT} Dropping connection request from '{peer_ip}' - untrusted peer")
         }
         // Ensure the peer is not restricted.
         if self.is_restricted(&peer_ip) {
-            bail!("Dropping connection request from '{peer_ip}' (restricted)")
+            bail!("{CONTEXT} Dropping connection request from '{peer_ip}' - restricted peer")
         }
         // Ensure the peer is not spamming connection attempts.
         if !peer_ip.ip().is_loopback() {
@@ -334,9 +330,16 @@ impl<N: Network> Router<N> {
             if num_attempts > Self::MAXIMUM_CONNECTION_FAILURES {
                 // Restrict the peer.
                 self.insert_restricted_peer(peer_ip);
-                bail!("Dropping connection request from '{peer_ip}' (tried {num_attempts} times)")
+                bail!("{CONTEXT} Dropping connection request from '{peer_ip}' - gave up after {num_attempts} attempts")
             }
         }
+        // Ensure the node is not already connecting to this peer.
+        match self.connecting_peers.lock().entry(peer_ip) {
+            Entry::Vacant(entry) => entry.insert(None),
+            Entry::Occupied(_) => {
+                bail!("{CONTEXT} Dropping connection request from '{peer_ip}' - already shaking hands as the initiator")
+            }
+        };
         Ok(())
     }
 

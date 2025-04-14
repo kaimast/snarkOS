@@ -33,6 +33,9 @@ pub const fn max(a: usize, b: usize) -> usize {
     }
 }
 
+/// Extra information added to log messages.
+const CONTEXT: &str = "[Heartbeat]";
+
 pub trait Heartbeat<N: Network>: Outbound<N> {
     /// The duration in seconds to sleep in between heartbeat executions.
     const HEARTBEAT_IN_SECS: u64 = 25; // 25 seconds
@@ -158,7 +161,7 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
         // of removable peers.
         // Do nothing, if the list is empty.
         if let Some(oldest) = self.get_removable_peers().first().map(|peer| peer.ip()) {
-            info!("Disconnecting from '{oldest}' (periodic refresh of peers)");
+            info!("{CONTEXT} Disconnecting from '{oldest}' (periodic refresh of peers)");
             let _ = self.send(oldest, Message::Disconnect(DisconnectReason::PeerRefresh.into()));
             self.router().disconnect(oldest);
         }
@@ -194,7 +197,7 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
 
         if num_surplus_provers > 0 || num_surplus_clients_validators > 0 {
             debug!(
-                "Exceeded maximum number of connected peers, disconnecting from ({num_surplus_provers} + {num_surplus_clients_validators}) peers"
+                "{CONTEXT} Exceeded maximum number of connected peers, disconnecting from ({num_surplus_provers} + {num_surplus_clients_validators}) peers"
             );
 
             // Retrieve the trusted peers.
@@ -229,7 +232,7 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
                     }
                 }
 
-                info!("Disconnecting from '{peer_ip}' (exceeded maximum connections)");
+                info!("{CONTEXT} Disconnecting from '{peer_ip}' (exceeded maximum connections)");
                 self.send(peer_ip, Message::Disconnect(DisconnectReason::TooManyPeers.into()));
                 // Disconnect from this peer.
                 self.router().disconnect(peer_ip);
@@ -286,7 +289,7 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
             let rng = &mut OsRng;
             // Proceed to send disconnect requests to these bootstrap peers.
             for peer_ip in connected_bootstrap.into_iter().choose_multiple(rng, num_surplus) {
-                info!("Disconnecting from '{peer_ip}' (exceeded maximum bootstrap)");
+                info!("{CONTEXT} Disconnecting from '{peer_ip}' (exceeded maximum bootstrap)");
                 self.send(peer_ip, Message::Disconnect(DisconnectReason::TooManyPeers.into()));
                 // Disconnect from this peer.
                 self.router().disconnect(peer_ip);
@@ -300,7 +303,7 @@ pub trait Heartbeat<N: Network>: Outbound<N> {
         for peer_ip in self.router().trusted_peers() {
             // If the peer is not connected, attempt to connect to it.
             if !self.router().is_connected(peer_ip) {
-                debug!("Attempting to (re-)connect to trusted peer `{peer_ip}`");
+                debug!("{CONTEXT} Attempting to (re-)connect to trusted peer `{peer_ip}`");
                 self.router().connect(*peer_ip);
             }
         }

@@ -294,13 +294,13 @@ impl<N: Network> Gateway<N> {
     }
 
     /// Returns `true` if the given IP is this node.
-    pub fn is_local_ip(&self, ip: SocketAddr) -> bool {
-        ip == self.local_ip()
+    pub fn is_local_ip(&self, ip: &SocketAddr) -> bool {
+        *ip == self.local_ip()
             || (ip.ip().is_unspecified() || ip.ip().is_loopback()) && ip.port() == self.local_ip().port()
     }
 
     /// Returns `true` if the given IP is not this node, is not a bogon address, and is not unspecified.
-    pub fn is_valid_peer_ip(&self, ip: SocketAddr) -> bool {
+    pub fn is_valid_peer_ip(&self, ip: &SocketAddr) -> bool {
         !self.is_local_ip(ip) && !is_bogon_ip(ip.ip()) && !is_unspecified_or_broadcast_ip(ip.ip())
     }
 
@@ -332,29 +332,29 @@ impl<N: Network> Gateway<N> {
     }
 
     /// Returns `true` if the node is connected to the given Aleo address.
-    pub fn is_connected_address(&self, address: Address<N>) -> bool {
+    pub fn is_connected_address(&self, address: &Address<N>) -> bool {
         // Retrieve the peer IP of the given address.
         match self.resolver.get_peer_ip_for_address(address) {
             // Determine if the peer IP is connected.
-            Some(peer_ip) => self.is_connected_ip(peer_ip),
+            Some(peer_ip) => self.is_connected_ip(&peer_ip),
             None => false,
         }
     }
 
     /// Returns `true` if the node is connected to the given peer IP.
-    pub fn is_connected_ip(&self, ip: SocketAddr) -> bool {
-        self.connected_peers.read().contains(&ip)
+    pub fn is_connected_ip(&self, ip: &SocketAddr) -> bool {
+        self.connected_peers.read().contains(ip)
     }
 
     /// Returns `true` if the node is connecting to the given peer IP.
-    pub fn is_connecting_ip(&self, ip: SocketAddr) -> bool {
-        self.connecting_peers.lock().contains(&ip)
+    pub fn is_connecting_ip(&self, ip: &SocketAddr) -> bool {
+        self.connecting_peers.lock().contains(ip)
     }
 
     /// Returns `true` if the given peer IP is an authorized validator.
-    pub fn is_authorized_validator_ip(&self, ip: SocketAddr) -> bool {
+    pub fn is_authorized_validator_ip(&self, ip: &SocketAddr) -> bool {
         // If the peer IP is in the trusted validators, return early.
-        if self.trusted_validators.contains(&ip) {
+        if self.trusted_validators.contains(ip) {
             return true;
         }
         // Retrieve the Aleo address of the peer IP.
@@ -413,7 +413,7 @@ impl<N: Network> Gateway<N> {
 
     /// Returns the list of connected addresses.
     pub fn connected_addresses(&self) -> HashSet<Address<N>> {
-        self.connected_peers.read().iter().filter_map(|peer_ip| self.resolver.get_address(*peer_ip)).collect()
+        self.connected_peers.read().iter().filter_map(|peer_ip| self.resolver.get_address(peer_ip)).collect()
     }
 
     /// Returns the list of connected peers.
@@ -422,6 +422,8 @@ impl<N: Network> Gateway<N> {
     }
 
     /// Attempts to connect to the given peer IP.
+    ///
+    /// If the connnection attempt is allowed, this returns a handle to the task establishing the TCP connection.
     pub fn connect(&self, peer_ip: SocketAddr) -> Option<JoinHandle<()>> {
         // Return early if the attempt is against the protocol rules.
         if let Err(forbidden_error) = self.check_connection_attempt(peer_ip) {
@@ -441,39 +443,43 @@ impl<N: Network> Gateway<N> {
     }
 
     /// Ensure we are allowed to connect to the given peer.
+    ///
+    /// Only called by [`Self::connect`].
     fn check_connection_attempt(&self, peer_ip: SocketAddr) -> Result<()> {
         // Ensure the peer IP is not this node.
-        if self.is_local_ip(peer_ip) {
-            bail!("{CONTEXT} Dropping connection attempt to '{peer_ip}' (attempted to self-connect)")
+        if self.is_local_ip(&peer_ip) {
+            bail!("{CONTEXT} Dropping connection attempt to '{peer_ip}' - validator attempted to connect to itself")
         }
         // Ensure the node does not surpass the maximum number of peer connections.
         if self.number_of_connected_peers() >= self.max_connected_peers() {
-            bail!("{CONTEXT} Dropping connection attempt to '{peer_ip}' (maximum peers reached)")
+            bail!(
+                "{CONTEXT} Dropping connection attempt to '{peer_ip}' - maximum number of connected validators reached (there are {} already, the limit is {})",
+                self.number_of_connected_peers(),
+                self.max_connected_peers(),
+            )
         }
         // Ensure the node is not already connected to this peer.
-        if self.is_connected_ip(peer_ip) {
-            bail!("{CONTEXT} Dropping connection attempt to '{peer_ip}' (already connected)")
+        if self.is_connected_ip(&peer_ip) {
+            bail!("{CONTEXT} Dropping connection attempt to '{peer_ip}' - already connected to this validator")
         }
         // Ensure the node is not already connecting to this peer.
-        if self.is_connecting_ip(peer_ip) {
-            bail!("{CONTEXT} Dropping connection attempt to '{peer_ip}' (already connecting)")
+        if self.is_connecting_ip(&peer_ip) {
+            bail!("{CONTEXT} Dropping connection attempt to '{peer_ip}' - already connecting to this validator")
         }
         Ok(())
     }
 
-    /// Ensure the peer is allowed to connect.
+    /// Ensure the peer is allowed to connect to us.
+    ///
+    /// If this return Ok(()), the peer was added to the set of connecting peers.
     fn ensure_peer_is_allowed(&self, peer_ip: SocketAddr) -> Result<()> {
         // Ensure the peer IP is not this node.
-        if self.is_local_ip(peer_ip) {
-            bail!("{CONTEXT} Dropping connection request from '{peer_ip}' (attempted to self-connect)")
-        }
-        // Ensure the node is not already connecting to this peer.
-        if !self.connecting_peers.lock().insert(peer_ip) {
-            bail!("{CONTEXT} Dropping connection request from '{peer_ip}' (already shaking hands as the initiator)")
+        if self.is_local_ip(&peer_ip) {
+            bail!("{CONTEXT} Dropping connection request from '{peer_ip}' - validator attempted to connect to itself")
         }
         // Ensure the node is not already connected to this peer.
-        if self.is_connected_ip(peer_ip) {
-            bail!("{CONTEXT} Dropping connection request from '{peer_ip}' (already connected)")
+        if self.is_connected_ip(&peer_ip) {
+            bail!("{CONTEXT} Dropping connection request from '{peer_ip}' - already connected to this peer")
         }
         // Ensure the peer is not spamming connection attempts.
         if !peer_ip.ip().is_loopback() {
@@ -481,9 +487,14 @@ impl<N: Network> Gateway<N> {
             let num_attempts = self.cache.insert_inbound_connection(peer_ip.ip(), RESTRICTED_INTERVAL);
             // Ensure the connecting peer has not surpassed the connection attempt limit.
             if num_attempts > MAX_CONNECTION_ATTEMPTS {
-                bail!("Dropping connection request from '{peer_ip}' (tried {num_attempts} times)")
+                bail!("Dropping connection request from '{peer_ip}' - gave up after {num_attempts} connection attempts")
             }
         }
+        // Ensure the node is not already connecting to this peer.
+        if !self.connecting_peers.lock().insert(peer_ip) {
+            bail!("{CONTEXT} Dropping connection request from '{peer_ip}' - already shaking hands as the initiator")
+        }
+        // TODO(kaimast): should we check the connecting-peers set here, and insert the peer's address?
         Ok(())
     }
 
@@ -537,9 +548,12 @@ impl<N: Network> Gateway<N> {
             });
         }
         // Removes the bidirectional map between the listener address and (ambiguous) peer address.
-        self.resolver.remove_peer(peer_ip);
+        self.resolver.remove_peer(&peer_ip);
         // Remove this peer from the connected peers, if it exists.
-        self.connected_peers.write().shift_remove(&peer_ip);
+        if !self.connected_peers.write().shift_remove(&peer_ip) {
+            warn!("remove_connected_peers() was called for peer {peer_ip}, but it is not in set of connected peers.");
+        }
+
         #[cfg(feature = "metrics")]
         self.update_metrics();
     }
@@ -551,7 +565,7 @@ impl<N: Network> Gateway<N> {
     /// which can be used to determine when and whether the event has been delivered.
     fn send_inner(&self, peer_ip: SocketAddr, event: Event<N>) -> Option<oneshot::Receiver<io::Result<()>>> {
         // Resolve the listener IP to the (ambiguous) peer address.
-        let Some(peer_addr) = self.resolver.get_ambiguous(peer_ip) else {
+        let Some(peer_addr) = self.resolver.get_ambiguous(&peer_ip) else {
             warn!("Unable to resolve the listener IP address '{peer_ip}'");
             return None;
         };
@@ -572,11 +586,11 @@ impl<N: Network> Gateway<N> {
     /// Handles the inbound event from the peer.
     async fn inbound(&self, peer_addr: SocketAddr, event: Event<N>) -> Result<()> {
         // Retrieve the listener IP for the peer.
-        let Some(peer_ip) = self.resolver.get_listener(peer_addr) else {
+        let Some(peer_ip) = self.resolver.get_listener(&peer_addr) else {
             bail!("{CONTEXT} Unable to resolve the (ambiguous) peer address '{peer_addr}'")
         };
         // Ensure that the peer is an authorized committee member.
-        if !self.is_authorized_validator_ip(peer_ip) {
+        if !self.is_authorized_validator_ip(&peer_ip) {
             bail!("{CONTEXT} Dropping '{}' from '{peer_ip}' (not authorized)", event.name())
         }
         // Drop the peer, if they have exceeded the rate limit (i.e. they are requesting too much from us).
@@ -783,7 +797,7 @@ impl<N: Network> Gateway<N> {
                     true => self.connected_peers.read().iter().copied().collect(),
                     // In production mode, ensure the peer IPs are valid.
                     false => {
-                        self.connected_peers.read().iter().copied().filter(|ip| self.is_valid_peer_ip(*ip)).collect()
+                        self.connected_peers.read().iter().copied().filter(|ip| self.is_valid_peer_ip(ip)).collect()
                     }
                 };
                 // Shuffle the connected peers.
@@ -796,7 +810,7 @@ impl<N: Network> Gateway<N> {
                     // Iterate over the validators.
                     for validator_ip in connected_peers.into_iter().take(MAX_VALIDATORS_TO_SEND) {
                         // Retrieve the validator address.
-                        if let Some(validator_address) = self_.resolver.get_address(validator_ip) {
+                        if let Some(validator_address) = self_.resolver.get_address(&validator_ip) {
                             // Add the validator to the list of validators.
                             validators.insert(validator_ip, validator_address);
                         }
@@ -826,12 +840,12 @@ impl<N: Network> Gateway<N> {
                         for (validator_ip, validator_address) in validators {
                             if self_.dev.is_some() {
                                 // Ensure the validator IP is not this node.
-                                if self_.is_local_ip(validator_ip) {
+                                if self_.is_local_ip(&validator_ip) {
                                     continue;
                                 }
                             } else {
                                 // Ensure the validator IP is not this node and is well-formed.
-                                if !self_.is_valid_peer_ip(validator_ip) {
+                                if !self_.is_valid_peer_ip(&validator_ip) {
                                     continue;
                                 }
                             }
@@ -841,11 +855,11 @@ impl<N: Network> Gateway<N> {
                                 continue;
                             }
                             // Ensure the validator IP is not already connected or connecting.
-                            if self_.is_connected_ip(validator_ip) || self_.is_connecting_ip(validator_ip) {
+                            if self_.is_connected_ip(&validator_ip) || self_.is_connecting_ip(&validator_ip) {
                                 continue;
                             }
                             // Ensure the validator address is not already connected.
-                            if self_.is_connected_address(validator_address) {
+                            if self_.is_connected_address(&validator_address) {
                                 continue;
                             }
                             // Ensure the validator address is an authorized validator.
@@ -889,7 +903,7 @@ impl<N: Network> Gateway<N> {
     pub fn disconnect(&self, peer_ip: SocketAddr) -> JoinHandle<()> {
         let gateway = self.clone();
         tokio::spawn(async move {
-            if let Some(peer_addr) = gateway.resolver.get_ambiguous(peer_ip) {
+            if let Some(peer_addr) = gateway.resolver.get_ambiguous(&peer_ip) {
                 // Disconnect from this peer.
                 let _disconnected = gateway.tcp.disconnect(peer_addr).await;
                 debug_assert!(_disconnected);
@@ -914,7 +928,6 @@ impl<N: Network> Gateway<N> {
     }
 
     /// Spawns a task with the given future; it should only be used for long-running tasks.
-    #[allow(dead_code)]
     fn spawn<T: Future<Output = ()> + Send + 'static>(&self, future: T) {
         self.handles.lock().push(tokio::spawn(future));
     }
@@ -954,7 +967,7 @@ impl<N: Network> Gateway<N> {
         // Resolve the total number of connectable validators.
         let validators_total = self.ledger.current_committee().map_or(0, |c| c.num_members().saturating_sub(1));
         // Format the total validators message.
-        let total_validators = format!("(of {validators_total} bonded validators)").dimmed();
+        let total_validators = format!("(out of {validators_total} bonded validators, excluding us)").dimmed();
         // Construct the connections message.
         let connections_msg = match connected_validators.len() {
             0 => "No connected validators".to_string(),
@@ -964,9 +977,9 @@ impl<N: Network> Gateway<N> {
         let mut connected_validator_addresses = IndexSet::with_capacity(connected_validators.len());
         connected_validator_addresses.insert(self.account.address());
         // Log the connected validators.
-        info!("{connections_msg}");
+        info!("{CONTEXT} {connections_msg}");
         for peer_ip in &connected_validators {
-            let address = self.resolver.get_address(*peer_ip).map_or("Unknown".to_string(), |a| {
+            let address = self.resolver.get_address(peer_ip).map_or("Unknown".to_string(), |a| {
                 connected_validator_addresses.insert(a);
                 a.to_string()
             });
@@ -976,7 +989,7 @@ impl<N: Network> Gateway<N> {
         // Log the validators that are not connected.
         let num_not_connected = validators_total.saturating_sub(connected_validators.len());
         if num_not_connected > 0 {
-            info!("Not connected to {num_not_connected} validators {total_validators}");
+            info!("{CONTEXT} Not connected to {num_not_connected} validators {total_validators}");
             // Collect the committee members.
             let committee_members: IndexSet<_> =
                 self.ledger.current_committee().map(|c| c.members().keys().copied().collect()).unwrap_or_default();
@@ -1007,9 +1020,9 @@ impl<N: Network> Gateway<N> {
         // Ensure that the trusted nodes are connected.
         for validator_ip in &self.trusted_validators {
             // If the trusted_validator is not connected, attempt to connect to it.
-            if !self.is_local_ip(*validator_ip)
-                && !self.is_connecting_ip(*validator_ip)
-                && !self.is_connected_ip(*validator_ip)
+            if !self.is_local_ip(validator_ip)
+                && !self.is_connecting_ip(validator_ip)
+                && !self.is_connected_ip(validator_ip)
             {
                 // Attempt to connect to the trusted validator.
                 self.connect(*validator_ip);
@@ -1026,7 +1039,7 @@ impl<N: Network> Gateway<N> {
             // Iterate over the validator IPs.
             for peer_ip in validators {
                 // Disconnect any validator that is not in the current committee.
-                if !self_.is_authorized_validator_ip(peer_ip) {
+                if !self_.is_authorized_validator_ip(&peer_ip) {
                     warn!("{CONTEXT} Disconnecting from '{peer_ip}' - Validator is not in the current committee");
                     Transport::send(&self_, peer_ip, DisconnectReason::ProtocolViolation.into()).await;
                     // Disconnect from this peer.
@@ -1064,7 +1077,7 @@ impl<N: Network> Gateway<N> {
     async fn process_message_inner(&self, peer_addr: SocketAddr, message: Event<N>) {
         // Process the message. Disconnect if the peer violated the protocol.
         if let Err(error) = self.inbound(peer_addr, message).await {
-            if let Some(peer_ip) = self.resolver.get_listener(peer_addr) {
+            if let Some(peer_ip) = self.resolver.get_listener(&peer_addr) {
                 warn!("{CONTEXT} Disconnecting from '{peer_ip}' - {error}");
                 let self_ = self.clone();
                 tokio::spawn(async move {
@@ -1206,7 +1219,7 @@ impl<N: Network> Writing for Gateway<N> {
 impl<N: Network> Disconnect for Gateway<N> {
     /// Any extra operations to be performed during a disconnect.
     async fn handle_disconnect(&self, peer_addr: SocketAddr) {
-        if let Some(peer_ip) = self.resolver.get_listener(peer_addr) {
+        if let Some(peer_ip) = self.resolver.get_listener(&peer_addr) {
             self.remove_connected_peer(peer_ip);
 
             // We don't clear this map based on time but only on peer disconnect.
@@ -1485,7 +1498,7 @@ impl<N: Network> Gateway<N> {
             return Some(DisconnectReason::ProtocolViolation);
         }
         // Ensure the address is not already connected.
-        if self.is_connected_address(address) {
+        if self.is_connected_address(&address) {
             warn!("{CONTEXT} Gateway is dropping '{peer_addr}' for being already connected ({address})");
             return Some(DisconnectReason::ProtocolViolation);
         }
