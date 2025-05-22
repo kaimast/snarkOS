@@ -14,7 +14,6 @@
 // limitations under the License.
 
 use crate::MAX_TIMESTAMP_DELTA_IN_SECS;
-use snarkvm::prelude::{Result, bail};
 
 use time::OffsetDateTime;
 
@@ -23,13 +22,10 @@ pub fn now() -> i64 {
     OffsetDateTime::now_utc().unix_timestamp()
 }
 
-/// Sanity checks the timestamp for liveness.
-pub fn check_timestamp_for_liveness(timestamp: i64) -> Result<()> {
+/// Returns false if the timestamp is too far in the future.
+pub fn check_timestamp_for_liveness(timestamp: i64) -> bool {
     // Ensure the timestamp is within range.
-    if timestamp > (now() + MAX_TIMESTAMP_DELTA_IN_SECS) {
-        bail!("Timestamp {timestamp} is too far in the future")
-    }
-    Ok(())
+    timestamp <= (now() + MAX_TIMESTAMP_DELTA_IN_SECS)
 }
 
 #[cfg(test)]
@@ -50,11 +46,11 @@ mod prop_tests {
 
     #[proptest]
     fn test_check_timestamp_for_liveness(#[strategy(any_valid_timestamp())] timestamp: i64) {
-        check_timestamp_for_liveness(timestamp).unwrap();
+        assert!(check_timestamp_for_liveness(timestamp));
     }
 
     #[proptest]
     fn test_check_timestamp_for_liveness_too_far_in_future(#[strategy(any_invalid_timestamp())] timestamp: i64) {
-        assert!(check_timestamp_for_liveness(timestamp).is_err());
+        assert!(!check_timestamp_for_liveness(timestamp));
     }
 }

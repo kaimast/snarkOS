@@ -43,7 +43,10 @@ cuda = [
 workspace = true
 
 [dependencies.anyhow]
-version = "1.0.79"
+workspace = true
+
+[dependencies.thiserror]
+version = "2"
 
 [dependencies.async-recursion]
 version = "1.0"

@@ -390,12 +390,13 @@ impl<N: Network> Worker<N> {
             bail!("Transaction '{}.{}' already exists.", fmt_id(transaction_id), fmt_id(checksum).dimmed());
         }
         // Deserialize the transaction. If the transaction exceeds the maximum size, then return an error.
-        let transaction = spawn_blocking!({
+        let result: Result<Transaction<N>> = spawn_blocking!({
             match transaction {
                 Data::Object(transaction) => Ok(transaction),
                 Data::Buffer(bytes) => Ok(Transaction::<N>::read_le(&mut bytes.take(N::MAX_TRANSACTION_SIZE as u64))?),
             }
         })?;
+        let transaction = result?;
 
         // Check that the transaction is well-formed and unique.
         self.ledger.check_transaction_basic(transaction_id, transaction).await?;
@@ -428,7 +429,6 @@ impl<N: Network> Worker<N> {
                 let self__ = self_.clone();
                 let _ = spawn_blocking!({
                     self__.pending.clear_expired_callbacks();
-                    Ok(())
                 });
             }
         });
@@ -457,7 +457,6 @@ impl<N: Network> Worker<N> {
                 let self__ = self_.clone();
                 let _ = spawn_blocking!({
                     self__.finish_transmission_request(peer_ip, transmission_response);
-                    Ok(())
                 });
             }
         });

@@ -561,7 +561,7 @@ impl<N: Network> Primary<N> {
                         }
 
                         // Deserialize the transaction. If the transaction exceeds the maximum size, then return an error.
-                        let transaction = spawn_blocking!({
+                        let result: Result<Transaction<N>> = spawn_blocking!({
                             match transaction {
                                 Data::Object(transaction) => Ok(transaction),
                                 Data::Buffer(bytes) => {
@@ -569,6 +569,7 @@ impl<N: Network> Primary<N> {
                                 }
                             }
                         })?;
+                        let transaction = result?;
 
                         // Check if the transaction is still valid.
                         // TODO: check if clone is cheap, otherwise fix.
@@ -653,7 +654,7 @@ impl<N: Network> Primary<N> {
             transmission_ids,
             previous_certificate_ids,
             &mut rand::thread_rng()
-        ))
+        ))?
         .and_then(|batch_header| {
             Proposal::new(committee_lookback, batch_header.clone(), transmissions.clone())
                 .map(|proposal| (batch_header, proposal))
@@ -686,7 +687,7 @@ impl<N: Network> Primary<N> {
         let BatchPropose { round: batch_round, batch_header } = batch_propose;
 
         // Deserialize the batch header.
-        let batch_header = spawn_blocking!(batch_header.deserialize_blocking())?;
+        let batch_header = spawn_blocking!(batch_header.deserialize_blocking())??;
         // Ensure the round matches in the batch header.
         if batch_round != batch_header.round() {
             // Proceed to disconnect the validator.
@@ -817,7 +818,8 @@ impl<N: Network> Primary<N> {
         // Ensure the batch header from the peer is valid.
         let (storage, header) = (self.storage.clone(), batch_header.clone());
         let missing_transmissions =
-            spawn_blocking!(storage.check_batch_header(&header, missing_transmissions, Default::default()))?;
+            spawn_blocking!(storage.check_batch_header(&header, missing_transmissions, Default::default()))??;
+
         // Inserts the missing transmissions into the workers.
         self.insert_missing_transmissions_into_workers(peer_ip, missing_transmissions.into_iter())?;
 
@@ -842,7 +844,7 @@ impl<N: Network> Primary<N> {
                     (transmission_id, transmission)
                 {
                     // Deserialize the transaction. If the transaction exceeds the maximum size, then return an error.
-                    let transaction = spawn_blocking!({
+                    let result: Result<Transaction<N>> = spawn_blocking!({
                         match transaction {
                             Data::Object(transaction) => Ok(transaction),
                             Data::Buffer(bytes) => {
@@ -850,6 +852,7 @@ impl<N: Network> Primary<N> {
                             }
                         }
                     })?;
+                    let transaction = result?;
 
                     // Compute the transaction spent cost (in microcredits).
                     // Note: We purposefully discard this transaction if we are unable to compute the spent cost.
@@ -891,7 +894,7 @@ impl<N: Network> Primary<N> {
         let batch_id = batch_header.batch_id();
         // Sign the batch ID.
         let account = self.gateway.account().clone();
-        let signature = spawn_blocking!(account.sign(&[batch_id], &mut rand::thread_rng()))?;
+        let signature = spawn_blocking!(account.sign(&[batch_id], &mut rand::thread_rng()))??;
 
         // Ensure the proposal has not already been signed.
         //
@@ -1012,7 +1015,7 @@ impl<N: Network> Primary<N> {
                 Some(proposal) => Ok(Some(proposal)),
                 None => Ok(None),
             }
-        })?
+        })??
         else {
             return Ok(());
         };
@@ -1152,9 +1155,13 @@ impl<N: Network> Primary<N> {
                 // Retrieve the block locators.
                 let self__ = self_.clone();
                 let block_locators = match spawn_blocking!(self__.sync.get_block_locators()) {
-                    Ok(block_locators) => block_locators,
-                    Err(e) => {
+                    Ok(Ok(block_locators)) => block_locators,
+                    Ok(Err(e)) => {
                         warn!("Failed to retrieve block locators - {e}");
+                        continue;
+                    }
+                    Err(err) => {
+                        error!("{err}");
                         continue;
                     }
                 };
@@ -1213,10 +1220,16 @@ impl<N: Network> Primary<N> {
                     let self_ = self_.clone();
                     tokio::spawn(async move {
                         // Deserialize the primary certificate in the primary ping.
-                        let Ok(primary_certificate) = spawn_blocking!(primary_certificate.deserialize_blocking())
-                        else {
-                            warn!("Failed to deserialize primary certificate in 'PrimaryPing' from '{peer_ip}'");
-                            return;
+                        let primary_certificate = match spawn_blocking!(primary_certificate.deserialize_blocking()) {
+                            Ok(Ok(cert)) => cert,
+                            Ok(Err(err)) => {
+                                warn!("Failed to deserialize primary certificate in 'PrimaryPing' from '{peer_ip}': {err}");
+                                return;
+                            }
+                            Err(err) => {
+                                error!("{err}");
+                                return;
+                            }
                         };
                         // Process the primary certificate.
                         let id = fmt_id(primary_certificate.id());
@@ -1331,9 +1344,17 @@ impl<N: Network> Primary<N> {
                 let self_ = self_.clone();
                 tokio::spawn(async move {
                     // Deserialize the batch certificate.
-                    let Ok(batch_certificate) = spawn_blocking!(batch_certificate.deserialize_blocking()) else {
-                        warn!("Failed to deserialize the batch certificate from '{peer_ip}'");
-                        return;
+                    let batch_certificate = match spawn_blocking!(batch_certificate.deserialize_blocking()) {
+                        Ok(Ok(cert)) => cert,
+                        Ok(Err(err)) => {
+                            warn!("Failed to deserialize the batch certificate from '{peer_ip}': {err}");
+                            return;
+                        }
+                        Err(err) => {
+                            // Tokio errors are more serious
+                            error!("{err}");
+                            return;
+                        }
                     };
                     // Process the batch certificate.
                     let id = fmt_id(batch_certificate.id());
@@ -1567,7 +1588,7 @@ impl<N: Network> Primary<N> {
         let transmissions = transmissions.into_iter().collect::<HashMap<_, _>>();
         // Store the certified batch.
         let (storage, certificate_) = (self.storage.clone(), certificate.clone());
-        spawn_blocking!(storage.insert_certificate(certificate_, transmissions, Default::default()))?;
+        spawn_blocking!(storage.insert_certificate(certificate_, transmissions, Default::default()))??;
         debug!("Stored a batch certificate for round {}", certificate.round());
         // If a BFT sender was provided, send the certificate to the BFT.
         if let Some(bft_sender) = self.bft_sender.get() {
@@ -1654,7 +1675,9 @@ impl<N: Network> Primary<N> {
         if !self.storage.contains_certificate(certificate.id()) {
             // Store the batch certificate.
             let (storage, certificate_) = (self.storage.clone(), certificate.clone());
-            spawn_blocking!(storage.insert_certificate(certificate_, missing_transmissions, Default::default()))?;
+
+            spawn_blocking!(storage.insert_certificate(certificate_, missing_transmissions, Default::default()))??;
+
             debug!("Stored a batch certificate for round {batch_round} from '{peer_ip}'");
             // If a BFT sender was provided, send the round and certificate to the BFT.
             if let Some(bft_sender) = self.bft_sender.get() {

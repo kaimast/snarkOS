@@ -71,9 +71,6 @@ pub const WORKER_PING_IN_MS: u64 = 4 * MAX_BATCH_DELAY_IN_MS; // ms
 #[macro_export]
 macro_rules! spawn_blocking {
     ($expr:expr) => {
-        match tokio::task::spawn_blocking(move || $expr).await {
-            Ok(value) => value,
-            Err(error) => Err(anyhow::anyhow!("[tokio::spawn_blocking] {error}")),
-        }
+        tokio::task::spawn_blocking(move || $expr).await.map_err(|err| anyhow::anyhow!("[tokio::spawn_blocking] {err}"))
     };
 }

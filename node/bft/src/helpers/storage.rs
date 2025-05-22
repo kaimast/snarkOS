@@ -21,7 +21,7 @@ use snarkvm::{
         block::{Block, Transaction},
         narwhal::{BatchCertificate, BatchHeader, Transmission, TransmissionID},
     },
-    prelude::{Address, Field, Network, Result, anyhow, bail, ensure},
+    prelude::{Address, Field, Network, Result, ensure},
     utilities::{cfg_into_iter, cfg_iter, cfg_sorted_by},
 };
 
@@ -102,6 +102,63 @@ pub struct StorageInner<N: Network> {
     batch_ids: RwLock<IndexMap<Field<N>, u64>>,
     /// The map of `transmission ID` to `(transmission, certificate IDs)` entries.
     transmissions: Arc<dyn StorageService<N>>,
+}
+
+/// An error caused by a reference to a previous batch
+#[derive(Debug, thiserror::Error)]
+pub enum PreviousBatchError<N: Network> {
+    #[error("Missing certificate")]
+    Missing,
+    #[error("Invalid round '{round}'")]
+    InvalidRound { round: u64 },
+    #[error("Duplicate author '{author}'")]
+    DuplicateAuthor { author: Address<N> },
+}
+
+/// Error returned when the storaged fails to check a BatchCertificate.
+///
+/// "batch" and "certificate" are used here interchangeably.
+#[derive(Debug, thiserror::Error)]
+pub enum BatchCheckError<N: Network> {
+    #[error("Batch '{certificate_id}' for round {round} (gc_round={gc_round}) already exists in storage")]
+    AlreadyExists { certificate_id: Field<N>, round: u64, gc_round: u64 },
+    #[error("Round of {certificate_id} ({round}) is at or below GC ({gc_round})")]
+    RoundBelowGC { certificate_id: Field<N>, round: u64, gc_round: u64 },
+    #[error("Timestamp ({timestamp}) of batch for round {round} (gc_round={gc_round}) is too far in the future")]
+    TooFarInFuture { round: u64, gc_round: u64, timestamp: i64 },
+    #[error("Storage failed to retrieve the committee lookback for round {round} (gc_round={gc_round}): {message}")]
+    MissingCommitteeLookback { round: u64, gc_round: u64, message: String },
+    #[error("Author {author} is not in the committee for round {round} (gc_round={gc_round})")]
+    AuthorNotInCommittee { author: Address<N>, round: u64, gc_round: u64 },
+    #[error("Missing certificates for the previous round {previous_round} (gc_round={gc_round}) in storage")]
+    MissingPreviousCertificates { previous_round: u64, gc_round: u64 },
+    #[error("Batch '{certificate_id}' has many previous certificates for round {round} (gc_round={gc_round})")]
+    TooManyPreviousCertificates { certificate_id: Field<N>, round: u64, gc_round: u64 },
+    #[error(
+        "Batch in round {round} (gc_round={gc_round}) has an invalid reference to previous certificate '{}' for round {previous_round} : {inner}",
+        fmt_id(previous_certificate_id)
+    )]
+    InvalidPreviousCertificate {
+        inner: PreviousBatchError<N>,
+        round: u64,
+        previous_round: u64,
+        gc_round: u64,
+        previous_certificate_id: Field<N>,
+    },
+    #[error("Previous certificates for a batch in round {round} (gc_round={gc_round}) did not reach quorum threshold")]
+    PreviousQuorumNotReached { round: u64, gc_round: u64 },
+    #[error(
+        "Signatures for certificate '{certificate_id}' in round {round} (gc_round={gc_round}) did not reach quorum threshold"
+    )]
+    QuorumNotReached { certificate_id: Field<N>, round: u64, gc_round: u64 },
+    #[error(
+        "Signer '{signer}' for batch '{certificate_id}' in round {round} (gc_round={gc_round}) is not in the committee"
+    )]
+    SignerNotInCommittee { certificate_id: Field<N>, signer: Address<N>, round: u64, gc_round: u64 },
+    #[error(
+        "Failed to fetch transmission for batch '{certificate_id}' in round {round} (gc_round={gc_round}: {message}"
+    )]
+    FailedToFetchTransmission { certificate_id: Field<N>, round: u64, gc_round: u64, message: String },
 }
 
 impl<N: Network> Storage<N> {
@@ -428,52 +485,72 @@ impl<N: Network> Storage<N> {
         batch_header: &BatchHeader<N>,
         transmissions: HashMap<TransmissionID<N>, Transmission<N>>,
         aborted_transmissions: HashSet<TransmissionID<N>>,
-    ) -> Result<HashMap<TransmissionID<N>, Transmission<N>>> {
+    ) -> std::result::Result<HashMap<TransmissionID<N>, Transmission<N>>, BatchCheckError<N>> {
         // Retrieve the round.
         let round = batch_header.round();
         // Retrieve the GC round.
         let gc_round = self.gc_round();
-        // Construct a GC log message.
-        let gc_log = format!("(gc = {gc_round})");
 
         // Ensure the batch ID does not already exist in storage.
         if self.contains_batch(batch_header.batch_id()) {
-            bail!("Batch for round {round} already exists in storage {gc_log}")
+            return Err(BatchCheckError::AlreadyExists { certificate_id: batch_header.batch_id(), round, gc_round });
         }
 
         // Retrieve the committee lookback for the batch round.
-        let Ok(committee_lookback) = self.ledger.get_committee_lookback_for_round(round) else {
-            bail!("Storage failed to retrieve the committee lookback for round {round} {gc_log}")
+        let committee_lookback = match self.ledger.get_committee_lookback_for_round(round) {
+            Ok(l) => l,
+            Err(err) => {
+                return Err(BatchCheckError::MissingCommitteeLookback { round, gc_round, message: err.to_string() });
+            }
         };
+
         // Ensure the author is in the committee.
         if !committee_lookback.is_committee_member(batch_header.author()) {
-            bail!("Author {} is not in the committee for round {round} {gc_log}", batch_header.author())
+            return Err(BatchCheckError::AuthorNotInCommittee { author: batch_header.author(), round, gc_round });
         }
 
         // Check the timestamp for liveness.
-        check_timestamp_for_liveness(batch_header.timestamp())?;
+        if !check_timestamp_for_liveness(batch_header.timestamp()) {
+            return Err(BatchCheckError::TooFarInFuture { round, gc_round, timestamp: batch_header.timestamp() });
+        };
 
         // Retrieve the missing transmissions in storage from the given transmissions.
         let missing_transmissions = self
             .transmissions
             .find_missing_transmissions(batch_header, transmissions, aborted_transmissions)
-            .map_err(|e| anyhow!("{e} for round {round} {gc_log}"))?;
+            .map_err(|err| BatchCheckError::FailedToFetchTransmission {
+                certificate_id: batch_header.batch_id(),
+                round,
+                gc_round,
+                message: err.to_string(),
+            })?;
 
         // Compute the previous round.
         let previous_round = round.saturating_sub(1);
         // Check if the previous round is within range of the GC round.
         if previous_round > gc_round {
             // Retrieve the committee lookback for the previous round.
-            let Ok(previous_committee_lookback) = self.ledger.get_committee_lookback_for_round(previous_round) else {
-                bail!("Missing committee for the previous round {previous_round} in storage {gc_log}")
+            let previous_committee_lookback = match self.ledger.get_committee_lookback_for_round(previous_round) {
+                Ok(l) => l,
+                Err(err) => {
+                    return Err(BatchCheckError::MissingCommitteeLookback {
+                        round: previous_round,
+                        gc_round,
+                        message: err.to_string(),
+                    });
+                }
             };
             // Ensure the previous round certificates exists in storage.
             if !self.contains_certificates_for_round(previous_round) {
-                bail!("Missing certificates for the previous round {previous_round} in storage {gc_log}")
+                return Err(BatchCheckError::MissingPreviousCertificates { previous_round, gc_round });
             }
             // Ensure the number of previous certificate IDs is at or below the number of committee members.
             if batch_header.previous_certificate_ids().len() > previous_committee_lookback.num_members() {
-                bail!("Too many previous certificates for round {round} {gc_log}")
+                return Err(BatchCheckError::TooManyPreviousCertificates {
+                    certificate_id: batch_header.batch_id(),
+                    round,
+                    gc_round,
+                });
             }
             // Initialize a set of the previous authors.
             let mut previous_authors = HashSet::with_capacity(batch_header.previous_certificate_ids().len());
@@ -481,25 +558,40 @@ impl<N: Network> Storage<N> {
             for previous_certificate_id in batch_header.previous_certificate_ids() {
                 // Retrieve the previous certificate.
                 let Some(previous_certificate) = self.get_certificate(*previous_certificate_id) else {
-                    bail!(
-                        "Missing previous certificate '{}' for certificate in round {round} {gc_log}",
-                        fmt_id(previous_certificate_id)
-                    )
+                    return Err(BatchCheckError::InvalidPreviousCertificate {
+                        inner: PreviousBatchError::Missing,
+                        previous_certificate_id: *previous_certificate_id,
+                        previous_round,
+                        round,
+                        gc_round,
+                    });
                 };
                 // Ensure the previous certificate is for the previous round.
                 if previous_certificate.round() != previous_round {
-                    bail!("Round {round} certificate contains a round {previous_round} certificate {gc_log}")
+                    return Err(BatchCheckError::InvalidPreviousCertificate {
+                        inner: PreviousBatchError::InvalidRound { round: previous_round },
+                        previous_certificate_id: *previous_certificate_id,
+                        round,
+                        previous_round,
+                        gc_round,
+                    });
                 }
                 // Ensure the previous author is new.
                 if previous_authors.contains(&previous_certificate.author()) {
-                    bail!("Round {round} certificate contains a duplicate author {gc_log}")
+                    return Err(BatchCheckError::InvalidPreviousCertificate {
+                        inner: PreviousBatchError::DuplicateAuthor { author: previous_certificate.author() },
+                        previous_certificate_id: *previous_certificate_id,
+                        round,
+                        previous_round,
+                        gc_round,
+                    });
                 }
                 // Insert the author of the previous certificate.
                 previous_authors.insert(previous_certificate.author());
             }
             // Ensure the previous certificates have reached the quorum threshold.
             if !previous_committee_lookback.is_quorum_threshold_reached(&previous_authors) {
-                bail!("Previous certificates for a batch in round {round} did not reach quorum threshold {gc_log}")
+                return Err(BatchCheckError::PreviousQuorumNotReached { round, gc_round });
             }
         }
         Ok(missing_transmissions)
@@ -516,33 +608,52 @@ impl<N: Network> Storage<N> {
     /// given `N > 0` total stake, and `f` the largest integer `< N/3` (where `/` is exact rational division),
     /// we have `N >= 3f + 1`, which implies `N - f >= 2f + 1`, which is always `> f`;
     /// `N - f` is the quorum stake.
-    pub fn check_incoming_certificate(&self, certificate: &BatchCertificate<N>) -> Result<()> {
+    pub fn check_incoming_certificate(
+        &self,
+        certificate: &BatchCertificate<N>,
+    ) -> std::result::Result<(), BatchCheckError<N>> {
         // Retrieve the certificate author and round.
         let certificate_author = certificate.author();
         let certificate_round = certificate.round();
 
-        // Retrieve the committee lookback.
-        let committee_lookback = self.ledger.get_committee_lookback_for_round(certificate_round)?;
+        // Retrieve the committee lookback for the batch round.
+        let committee_lookback = match self.ledger.get_committee_lookback_for_round(certificate_round) {
+            Ok(l) => l,
+            Err(err) => {
+                return Err(BatchCheckError::MissingCommitteeLookback {
+                    round: certificate_round,
+                    gc_round: self.gc_round(),
+                    message: err.to_string(),
+                });
+            }
+        };
 
         // Ensure that the signers of the certificate reach the quorum threshold.
         // Note that certificate.signatures() only returns the endorsing signatures, not the author's signature.
         let mut signers: HashSet<Address<N>> =
             certificate.signatures().map(|signature| signature.to_address()).collect();
         signers.insert(certificate_author);
-        ensure!(
-            committee_lookback.is_quorum_threshold_reached(&signers),
-            "Certificate '{}' for round {certificate_round} does not meet quorum requirements",
-            certificate.id()
-        );
+
+        if !committee_lookback.is_quorum_threshold_reached(&signers) {
+            return Err(BatchCheckError::QuorumNotReached {
+                certificate_id: certificate.id(),
+                round: certificate_round,
+                gc_round: self.gc_round(),
+            });
+        }
 
         // Ensure that the signers of the certificate are in the committee.
         cfg_iter!(signers).try_for_each(|signer| {
-            ensure!(
-                committee_lookback.is_committee_member(*signer),
-                "Signer '{signer}' of certificate '{}' for round {certificate_round} is not in the committee",
-                certificate.id()
-            );
-            Ok(())
+            if committee_lookback.is_committee_member(*signer) {
+                Ok(())
+            } else {
+                Err(BatchCheckError::SignerNotInCommittee {
+                    certificate_id: certificate.id(),
+                    signer: *signer,
+                    round: certificate_round,
+                    gc_round: self.gc_round(),
+                })
+            }
         })?;
 
         Ok(())
@@ -568,22 +679,20 @@ impl<N: Network> Storage<N> {
         certificate: &BatchCertificate<N>,
         transmissions: HashMap<TransmissionID<N>, Transmission<N>>,
         aborted_transmissions: HashSet<TransmissionID<N>>,
-    ) -> Result<HashMap<TransmissionID<N>, Transmission<N>>> {
+    ) -> std::result::Result<HashMap<TransmissionID<N>, Transmission<N>>, BatchCheckError<N>> {
         // Retrieve the round.
         let round = certificate.round();
         // Retrieve the GC round.
         let gc_round = self.gc_round();
-        // Construct a GC log message.
-        let gc_log = format!("(gc = {gc_round})");
 
         // Ensure the certificate ID does not already exist in storage.
         if self.contains_certificate(certificate.id()) {
-            bail!("Certificate for round {round} already exists in storage {gc_log}")
+            return Err(BatchCheckError::AlreadyExists { certificate_id: certificate.id(), round, gc_round });
         }
 
         // Ensure the storage does not already contain a certificate for this author in this round.
         if self.contains_certificate_in_round_from(round, certificate.author()) {
-            bail!("Certificate with this author for round {round} already exists in storage {gc_log}")
+            return Err(BatchCheckError::AlreadyExists { certificate_id: certificate.id(), round, gc_round });
         }
 
         // Ensure the batch header is well-formed.
@@ -591,11 +700,16 @@ impl<N: Network> Storage<N> {
             self.check_batch_header(certificate.batch_header(), transmissions, aborted_transmissions)?;
 
         // Check the timestamp for liveness.
-        check_timestamp_for_liveness(certificate.timestamp())?;
+        if !check_timestamp_for_liveness(certificate.timestamp()) {
+            return Err(BatchCheckError::TooFarInFuture { timestamp: certificate.timestamp(), round, gc_round });
+        }
 
         // Retrieve the committee lookback for the batch round.
-        let Ok(committee_lookback) = self.ledger.get_committee_lookback_for_round(round) else {
-            bail!("Storage failed to retrieve the committee for round {round} {gc_log}")
+        let committee_lookback = match self.ledger.get_committee_lookback_for_round(round) {
+            Ok(l) => l,
+            Err(err) => {
+                return Err(BatchCheckError::MissingCommitteeLookback { round, gc_round, message: err.to_string() });
+            }
         };
 
         // Initialize a set of the signers.
@@ -609,17 +723,23 @@ impl<N: Network> Storage<N> {
             let signer = signature.to_address();
             // Ensure the signer is in the committee.
             if !committee_lookback.is_committee_member(signer) {
-                bail!("Signer {signer} is not in the committee for round {round} {gc_log}")
+                return Err(BatchCheckError::SignerNotInCommittee {
+                    certificate_id: certificate.id(),
+                    signer,
+                    round,
+                    gc_round,
+                });
             }
             // Append the signer.
             signers.insert(signer);
         }
 
         // Ensure the signatures have reached the quorum threshold.
-        if !committee_lookback.is_quorum_threshold_reached(&signers) {
-            bail!("Signatures for a batch in round {round} did not reach quorum threshold {gc_log}")
+        if committee_lookback.is_quorum_threshold_reached(&signers) {
+            Ok(missing_transmissions)
+        } else {
+            Err(BatchCheckError::QuorumNotReached { certificate_id: certificate.id(), round, gc_round })
         }
-        Ok(missing_transmissions)
     }
 
     /// Inserts the given `certificate` into storage.
@@ -638,9 +758,18 @@ impl<N: Network> Storage<N> {
         certificate: BatchCertificate<N>,
         transmissions: HashMap<TransmissionID<N>, Transmission<N>>,
         aborted_transmissions: HashSet<TransmissionID<N>>,
-    ) -> Result<()> {
+    ) -> std::result::Result<(), BatchCheckError<N>> {
+        let gc_round = self.gc_round();
+
         // Ensure the certificate round is above the GC round.
-        ensure!(certificate.round() > self.gc_round(), "Certificate round is at or below the GC round");
+        if certificate.round() <= gc_round {
+            return Err(BatchCheckError::RoundBelowGC {
+                round: certificate.round(),
+                gc_round,
+                certificate_id: certificate.id(),
+            });
+        }
+
         // Ensure the certificate and its transmissions are valid.
         let missing_transmissions =
             self.check_certificate(&certificate, transmissions, aborted_transmissions.clone())?;
@@ -1220,7 +1349,7 @@ pub(crate) mod tests {
                         &other_keys,
                         rng,
                     );
-                    assert!(storage.check_incoming_certificate(&certificate).is_err());
+                    assert!(storage.check_incoming_certificate(&certificate).is_err(),);
                 }
             }
 

@@ -394,12 +394,13 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
                     None,
                     &mut rand::thread_rng(),
                 )) {
-                    Ok(transaction) => transaction,
-                    Err(error) => {
+                    Ok(Ok(transaction)) => transaction,
+                    Ok(Err(error)) | Err(error) => {
                         error!("Transaction pool encountered an execution error - {error}");
                         continue;
                     }
                 };
+
                 // Broadcast the transaction.
                 if self_
                     .unconfirmed_transaction(

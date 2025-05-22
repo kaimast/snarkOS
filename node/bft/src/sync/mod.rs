@@ -148,7 +148,6 @@ impl<N: Network> Sync<N> {
                 let self__ = self_.clone();
                 let _ = spawn_blocking!({
                     self__.pending.clear_expired_callbacks();
-                    Ok(())
                 });
             }
         });

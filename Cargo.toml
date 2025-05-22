@@ -50,6 +50,9 @@ rev = "382198c"
 #version = "=3.7.1"
 features = [ "circuit", "console", "rocks" ]
 
+[workspace.dependencies.anyhow]
+version = "1.0.79"
+
 [[bin]]
 name = "snarkos"
 path = "snarkos/main.rs"
@@ -84,7 +87,7 @@ locktick = [
 test_network = [ "snarkos-cli/test_network" ]
 
 [dependencies.anyhow]
-version = "1.0.79"
+workspace = true
 
 [dependencies.clap]
 version = "4.4"

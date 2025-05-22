@@ -495,14 +495,21 @@ impl<N: Network> Consensus<N> {
         // Try to advance to the next block.
         let self_ = self.clone();
         let transmissions_ = transmissions.clone();
-        let result = spawn_blocking! { self_.try_advance_to_next_block(subdag, transmissions_) };
 
-        // If the block failed to advance, reinsert the transmissions into the memory pool.
-        if let Err(e) = &result {
-            error!("Unable to advance to the next block - {e}");
+        let result = spawn_blocking! { self_.try_advance_to_next_block(subdag, transmissions_) };
+        let result = match result {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(err)) => Err(err),
+            Err(err) => Err(err),
+        };
+
+        if let Err(err) = &result {
+            // If the block failed to advance, reinsert the transmissions into the memory pool.
+            error!("Unable to advance to the next block - {err}");
             // On failure, reinsert the transmissions into the memory pool.
             self.reinsert_transmissions(transmissions).await;
         }
+
         // Send the callback **after** advancing to the next block.
         // Note: We must await the block to be advanced before sending the callback.
         callback.send(result).ok();

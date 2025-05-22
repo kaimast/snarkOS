@@ -1502,7 +1502,9 @@ impl<N: Network> Gateway<N> {
         None
     }
 
-    /// Verifies the given challenge response. Returns a disconnect reason if the response is invalid.
+    /// Verifies the given challenge response.
+    ///
+    /// Returns None on success and a disconnect reason if the response is invalid.
     async fn verify_challenge_response(
         &self,
         peer_addr: SocketAddr,
@@ -1520,10 +1522,20 @@ impl<N: Network> Gateway<N> {
             return Some(DisconnectReason::InvalidChallengeResponse);
         }
         // Perform the deferred non-blocking deserialization of the signature.
-        let Ok(signature) = spawn_blocking!(signature.deserialize_blocking()) else {
-            warn!("{CONTEXT} Gateway handshake with '{peer_addr}' failed (cannot deserialize the signature)");
-            return Some(DisconnectReason::InvalidChallengeResponse);
+        let signature = match spawn_blocking!(signature.deserialize_blocking()) {
+            Ok(Ok(sig)) => sig,
+            Ok(Err(err)) => {
+                warn!(
+                    "{CONTEXT} Gateway handshake with '{peer_addr}' failed (cannot deserialize the signature): {err}"
+                );
+                return Some(DisconnectReason::InvalidChallengeResponse);
+            }
+            Err(err) => {
+                error!("{CONTEXT} Gateway handshake with '{peer_addr}' failed. tokio error: {err}");
+                return Some(DisconnectReason::InvalidChallengeResponse);
+            }
         };
+
         // Verify the signature.
         if !signature.verify_bytes(&peer_address, &[expected_nonce.to_le_bytes(), nonce.to_le_bytes()].concat()) {
             warn!("{CONTEXT} Gateway handshake with '{peer_addr}' failed (invalid signature)");
