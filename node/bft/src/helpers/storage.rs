@@ -1349,7 +1349,10 @@ pub(crate) mod tests {
                         &other_keys,
                         rng,
                     );
-                    assert!(storage.check_incoming_certificate(&certificate).is_err(),);
+                    assert!(matches!(
+                        storage.check_incoming_certificate(&certificate),
+                        Err(BatchCheckError::QuorumNotReached { .. }),
+                    ));
                 }
             }
 
@@ -1398,7 +1401,8 @@ pub(crate) mod tests {
                         .insert_certificate(certificate, transmissions, Default::default())
                         .expect("Valid certificate rejected");
                 } else {
-                    assert!(storage.insert_certificate(certificate, transmissions, Default::default()).is_err());
+                    let result = storage.insert_certificate(certificate, transmissions, Default::default());
+                    assert!(matches!(result, Err(BatchCheckError::PreviousQuorumNotReached { .. })));
                 }
             }
 
@@ -1453,7 +1457,8 @@ pub(crate) mod tests {
                         .insert_certificate(certificate, transmissions, Default::default())
                         .expect("Valid certificate rejected");
                 } else {
-                    assert!(storage.insert_certificate(certificate, transmissions, Default::default()).is_err());
+                    let result = storage.insert_certificate(certificate, transmissions, Default::default());
+                    assert!(matches!(result, Err(BatchCheckError::AlreadyExists { .. })));
                 }
             }
 
