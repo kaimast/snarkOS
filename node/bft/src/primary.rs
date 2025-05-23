@@ -38,6 +38,7 @@ use crate::{
         init_sync_channels,
         init_worker_channels,
         now,
+        storage::BatchCheckError,
     },
     spawn_blocking,
 };
@@ -767,7 +768,9 @@ impl<N: Network> Primary<N> {
         }
 
         // Ensure that the batch header doesn't already exist in storage.
-        // Note this is already checked in `check_batch_header`, however we can return early here without creating a blocking task.
+        //
+        // This is already checked in `check_batch_header`, however we can return early here without creating a blocking task.
+        // Note, that we might the batch might still exists in storage later due to race condition.
         if self.storage.contains_batch(batch_header.batch_id()) {
             debug!(
                 "Primary is safely skipping a batch proposal from '{peer_ip}' - {}",
@@ -818,7 +821,15 @@ impl<N: Network> Primary<N> {
         // Ensure the batch header from the peer is valid.
         let (storage, header) = (self.storage.clone(), batch_header.clone());
         let missing_transmissions =
-            spawn_blocking!(storage.check_batch_header(&header, missing_transmissions, Default::default()))??;
+            match spawn_blocking!(storage.check_batch_header(&header, missing_transmissions, Default::default()))? {
+                Ok(transmissions) => transmissions,
+                Err(BatchCheckError::AlreadyExists { .. }) => {
+                    // This can happen when the batch gets a quorum of signatures from other nodes
+                    // before this nodes signs it.
+                    return Ok(());
+                }
+                Err(err) => return Err(err.into()),
+            };
 
         // Inserts the missing transmissions into the workers.
         self.insert_missing_transmissions_into_workers(peer_ip, missing_transmissions.into_iter())?;
