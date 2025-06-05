@@ -149,8 +149,11 @@ tikv-jemallocator = "0.5"
 version = "0.1"
 optional = true
 
-[dev-dependencies.rusty-hook]
-version = "0.11.2"
+[build-dependencies.git2]
+version = "0.20"
+
+[build-dependencies.git2-hooks]
+version = "0.5"
 
 [build-dependencies.built]
 version = "0.7"

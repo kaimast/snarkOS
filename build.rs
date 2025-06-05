@@ -61,6 +61,14 @@ fn check_file_licenses<P: AsRef<Path>>(path: P) {
 
 // The build script; it currently only checks the licenses.
 fn main() {
+    let repo = git2::Repository::open(".").expect("Failed to access local git repository");
+    git2_hooks::create_hook(
+        &repo,
+        "pre-commit",
+        "cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo +nightly fmt --all -- --check"
+            .as_bytes(),
+    );
+
     // Check licenses in the current folder.
     check_file_licenses(".");
 
