@@ -25,9 +25,11 @@ use snarkos_node_router::messages::{
     PuzzleRequest,
     UnconfirmedTransaction,
 };
+use snarkos_node_sync::locators::BlockLocators;
 use snarkos_node_tcp::{Connection, ConnectionSide, Tcp};
 use snarkvm::prelude::{Field, Network, Zero, block::Transaction};
 
+use anyhow::{Result, bail};
 use std::{io, net::SocketAddr};
 
 impl<N: Network, C: ConsensusStorage<N>> P2P for Prover<N, C> {
@@ -149,15 +151,23 @@ impl<N: Network, C: ConsensusStorage<N>> Inbound<N> for Prover<N, C> {
     }
 
     /// Handles a `BlockRequest` message.
-    fn block_request(&self, peer_ip: SocketAddr, _message: BlockRequest) -> bool {
-        debug!("Disconnecting '{peer_ip}' for the following reason - {:?}", DisconnectReason::ProtocolViolation);
-        false
+    fn block_request(&self, peer_ip: SocketAddr, _message: BlockRequest) -> Result<()> {
+        bail!("Disconnecting '{peer_ip}' for the following reason - {:?}", DisconnectReason::ProtocolViolation);
     }
 
     /// Handles a `BlockResponse` message.
-    fn block_response(&self, peer_ip: SocketAddr, _blocks: Vec<Block<N>>) -> bool {
-        debug!("Disconnecting '{peer_ip}' for the following reason - {:?}", DisconnectReason::ProtocolViolation);
-        false
+    fn block_response(&self, peer_ip: SocketAddr, _blocks: Vec<Block<N>>) -> Result<()> {
+        bail!("Disconnecting '{peer_ip}' for the following reason - {:?}", DisconnectReason::ProtocolViolation);
+    }
+
+    /// Handles a `BlocklocatorsRequest` message.
+    async fn block_locators_request(&self, peer_ip: SocketAddr, _start_height: u32, _end_height: u32) -> Result<()> {
+        bail!("Disconnecting '{peer_ip}' for the following reason - {:?}", DisconnectReason::ProtocolViolation);
+    }
+
+    /// Handles a `BlockLocatorsResponse` message.
+    async fn block_locators_response(&self, peer_ip: SocketAddr, _locators: BlockLocators<N>) -> Result<()> {
+        bail!("Disconnecting '{peer_ip}' for the following reason - {:?}", DisconnectReason::ProtocolViolation);
     }
 
     /// Processes the block locators and sends back a `Pong` message.
@@ -165,7 +175,7 @@ impl<N: Network, C: ConsensusStorage<N>> Inbound<N> for Prover<N, C> {
         // If block locators were provided, then update the peer in the sync pool.
         if let Some(block_locators) = message.block_locators {
             // Check the block locators are valid, and update the peer in the sync pool.
-            if let Err(error) = self.sync.update_peer_locators(peer_ip, block_locators) {
+            if let Err(error) = self.sync.update_peer_block_locators(peer_ip, block_locators) {
                 warn!("Peer '{peer_ip}' sent invalid block locators: {error}");
                 return false;
             }

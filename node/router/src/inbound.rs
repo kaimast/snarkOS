@@ -17,6 +17,8 @@ use crate::{
     Outbound,
     Peer,
     messages::{
+        BlockLocatorsRequest,
+        BlockLocatorsResponse,
         BlockRequest,
         BlockResponse,
         DataBlocks,
@@ -28,6 +30,7 @@ use crate::{
         UnconfirmedTransaction,
     },
 };
+use snarkos_node_sync_locators::BlockLocators;
 use snarkos_node_tcp::protocols::Reading;
 use snarkvm::prelude::{
     Network,
@@ -120,10 +123,9 @@ pub trait Inbound<N: Network>: Reading + Outbound<N> {
                 }
 
                 let node = self.clone();
-                match spawn_blocking(move || node.block_request(peer_ip, message)).await? {
-                    true => Ok(true),
-                    false => bail!("Peer '{peer_ip}' sent an invalid block request"),
-                }
+                spawn_blocking(move || node.block_request(peer_ip, message))
+                    .await?
+                    .map_err(|err| anyhow!("Peer '{peer_ip}' sent an invalid block request: {err}"))
             }
             Message::BlockResponse(message) => {
                 let BlockResponse { request, blocks } = message;
@@ -151,10 +153,9 @@ pub trait Inbound<N: Network>: Reading + Outbound<N> {
 
                 // Process the block response.
                 let node = self.clone();
-                match spawn_blocking(move || node.block_response(peer_ip, blocks.0)).await? {
-                    true => Ok(true),
-                    false => bail!("Peer '{peer_ip}' sent an invalid block response"),
-                }
+                spawn_blocking(move || node.block_response(peer_ip, blocks.0))
+                    .await?
+                    .map_err(|err| anyhow!("Peer '{peer_ip}' sent an invalid block response: {err}"))
             }
             Message::ChallengeRequest(..) | Message::ChallengeResponse(..) => {
                 // Disconnect as the peer is not following the protocol.
@@ -192,12 +193,12 @@ pub trait Inbound<N: Network>: Reading + Outbound<N> {
 
                 // If the peer is a client or validator, ensure there are block locators.
                 let is_client_or_validator = message.node_type.is_client() || message.node_type.is_validator();
-                if is_client_or_validator && message.block_locators.is_none() {
-                    bail!("Peer '{peer_ip}' is a {}, but no block locators were provided", message.node_type);
+                if is_client_or_validator && message.block_height.is_none() {
+                    bail!("Peer '{peer_ip}' is a {}, but no block height was provided", message.node_type);
                 }
                 // If the peer is a prover, ensure there are no block locators.
-                else if message.node_type.is_prover() && message.block_locators.is_some() {
-                    bail!("Peer '{peer_ip}' is a prover or client, but block locators were provided");
+                else if message.node_type.is_prover() && message.block_height.is_some() {
+                    bail!("Peer '{peer_ip}' is a, but a block height was provided");
                 }
 
                 // Update the connected peer.
@@ -316,14 +317,32 @@ pub trait Inbound<N: Network>: Reading + Outbound<N> {
                     false => bail!("Peer '{peer_ip}' sent an invalid unconfirmed transaction"),
                 }
             }
+            Message::BlockLocatorsRequest(BlockLocatorsRequest { start_height, end_height }) => {
+                self.block_locators_request(peer_ip, start_height, end_height).await
+            }
+            Message::BlockLocatorsResponse(BlockLocatorsResponse { locators }) => {
+                self.block_locators_response(peer_ip, locators).await
+            }
         }
     }
 
     /// Handles a `BlockRequest` message.
-    fn block_request(&self, peer_ip: SocketAddr, _message: BlockRequest) -> bool;
+    fn block_request(&self, peer_ip: SocketAddr, message: BlockRequest) -> Result<bool>;
 
     /// Handles a `BlockResponse` message.
-    fn block_response(&self, peer_ip: SocketAddr, _blocks: Vec<Block<N>>) -> bool;
+    ///
+    /// Returns true if the response was valid
+    fn block_response(&self, peer_ip: SocketAddr, blocks: Vec<Block<N>>) -> Result<bool>;
+
+    /// Handles a `BlockRequest` message.
+    ///
+    /// Returns true if the request was valid.
+    async fn block_locators_request(&self, peer_ip: SocketAddr, start_height: u32, end_height: u32) -> Result<bool>;
+
+    /// Handles a `BlockResponse` message.
+    ///
+    /// Returns
+    async fn block_locators_response(&self, peer_ip: SocketAddr, locators: BlockLocators<N>) -> Result<bool>;
 
     /// Handles a `PeerRequest` message.
     fn peer_request(&self, peer_ip: SocketAddr) -> bool {
@@ -366,7 +385,7 @@ pub trait Inbound<N: Network>: Reading + Outbound<N> {
     }
 
     /// Handles a `Ping` message.
-    fn ping(&self, peer_ip: SocketAddr, message: Ping<N>) -> bool;
+    fn ping(&self, peer_ip: SocketAddr, message: Ping) -> bool;
 
     /// Sleeps for a period and then sends a `Ping` message to the peer.
     fn pong(&self, peer_ip: SocketAddr, _message: Pong) -> bool;

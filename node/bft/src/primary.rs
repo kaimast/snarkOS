@@ -1198,14 +1198,14 @@ impl<N: Network> Primary<N> {
                 tokio::time::sleep(Duration::from_millis(PRIMARY_PING_IN_MS)).await;
 
                 // Retrieve the block locators.
-                let self__ = self_.clone();
-                let block_locators = match spawn_blocking!(self__.sync.get_block_locators()) {
+                /* let self__ = self_.clone();
+                               let block_locators = match spawn_blocking!(self__.sync.get_block_locators()) {
                     Ok(block_locators) => block_locators,
                     Err(e) => {
                         warn!("Failed to retrieve block locators - {e}");
                         continue;
                     }
-                };
+                };*/
 
                 // Retrieve the latest certificate of the primary.
                 let primary_certificate = {
@@ -1240,7 +1240,8 @@ impl<N: Network> Primary<N> {
                 };
 
                 // Construct the primary ping.
-                let primary_ping = PrimaryPing::from((<Event<N>>::VERSION, block_locators, primary_certificate));
+                let primary_ping =
+                    PrimaryPing::from((<Event<N>>::VERSION, self_.ledger.latest_block_height(), primary_certificate));
                 // Broadcast the event.
                 self_.gateway.broadcast(Event::PrimaryPing(primary_ping));
             }
