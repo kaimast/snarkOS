@@ -92,4 +92,4 @@ features = [ "test" ]
 
 [dev-dependencies.snarkvm]
 workspace = true
-features = [ "test-helpers" ]
+features = [ "test-helpers", "test" ]

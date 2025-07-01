@@ -44,10 +44,11 @@ version = "1.0.1"
 default-features = false
 
 [workspace.dependencies.snarkvm] # If this is updated, the rev in `node/rest/Cargo.toml` must be updated as well.
-#path = "../snarkVM"
-git = "https://github.com/ProvableHQ/snarkVM.git"
-rev = "c194f3e"
-#version = "=3.8.0"
+path = "../snarkVM/snarkvm-dylib"
+package = "snarkvm-dylib"
+#git = "https://github.com/ProvableHQ/snarkVM.git"
+#rev = "c194f3e"
+version = "=3.8.0"
 default-features = false
 #features = [ "circuit", "console", "rocks" ]
 
@@ -101,6 +102,7 @@ path = "snarkos/main.rs"
 default = [ "snarkos-cli/metrics", "snarkos-node-metrics", "snarkos-node/metrics", "snarkos-node-cdn/metrics" ]
 history = [ "snarkos-node/history" ]
 telemetry = [ "snarkos-node/telemetry" ]
+snarkvm-dylib = []
 cuda = [
   "snarkos-account/cuda",
   "snarkos-cli/cuda",

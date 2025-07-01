@@ -126,7 +126,6 @@ version = "=3.8.0"
 
 [dependencies.snarkvm]
 workspace = true
-features = [ "utilities" ]
 
 [dependencies.time]
 version = "0.3"
@@ -187,6 +186,10 @@ version = "1"
 [dev-dependencies.snarkos-node-bft]
 path = "."
 features = [ "test" ]
+
+[dev-dependencies.snarkvm]
+workspace = true
+features = [ "test-helpers", "test" ]
 
 [dev-dependencies.test-strategy]
 workspace = true

@@ -32,6 +32,7 @@ locktick = [
   "snarkvm/locktick"
 ]
 metrics = [
+  "snarkvm/metrics",
   "snarkos-node-bft/metrics",
   "snarkos-node-consensus/metrics",
   "snarkos-node-router/metrics",

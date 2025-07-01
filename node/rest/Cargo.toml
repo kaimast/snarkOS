@@ -18,15 +18,16 @@ edition = "2021"
 
 [features]
 default = [ "parallel" ]
+synthesizers = [ "snarkvm/synthesizer" ]
 parallel = [ "rayon" ]
-history = [ "snarkvm-synthesizer/history" ]
+history = [ "snarkvm/history" ]
 telemetry = [ "snarkos-node-consensus/telemetry" ]
 cuda = [ "snarkvm/cuda", "snarkos-node-consensus/cuda", "snarkos-node-router/cuda" ]
 locktick = [
   "dep:locktick",
   "snarkos-node-consensus/locktick",
   "snarkos-node-router/locktick",
-  "snarkvm-synthesizer/locktick"
+  "snarkvm/locktick"
 ]
 
 [dependencies.anyhow]
@@ -80,14 +81,6 @@ workspace = true
 
 [dependencies.snarkos-node-router]
 workspace = true
-
-[dependencies.snarkvm-synthesizer]
-#path = "../../../snarkVM/synthesizer"
-git = "https://github.com/ProvableHQ/snarkVM.git"
-rev = "c194f3e"
-#version = "=3.8.0"
-default-features = false
-optional = true
 
 [dependencies.rand]
 version = "0.8"
