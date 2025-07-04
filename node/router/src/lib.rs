@@ -128,7 +128,7 @@ impl<N: Network> Router<N> {
     const MAXIMUM_CANDIDATE_PEERS: usize = 10_000;
     /// The maximum number of connection failures permitted by an inbound connecting peer.
     const MAXIMUM_CONNECTION_FAILURES: usize = 5;
-    /// The maximum amount of connection attempts withing a 10 second threshold
+    /// The maximum amount of connection attempts within a 10 second threshold
     #[cfg(not(test))]
     const MAX_CONNECTION_ATTEMPTS: usize = 10;
     /// The duration in seconds after which a connected peer is considered inactive or
