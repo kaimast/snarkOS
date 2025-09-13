@@ -15,24 +15,14 @@
 
 use crate::{
     MAX_LEADER_CERTIFICATE_DELAY_IN_SECS,
-    Primary,
-    helpers::{
-        BFTReceiver,
-        ConsensusSender,
-        DAG,
-        PrimaryReceiver,
-        PrimarySender,
-        Storage,
-        fmt_id,
-        init_bft_channels,
-        now,
-    },
+    helpers::{BFTReceiver, DAG, PrimaryReceiver, PrimarySender, Storage, fmt_id, init_bft_channels, now},
+    primary::Primary,
 };
 
 use snarkos_account::Account;
 use snarkos_node_bft_ledger_service::LedgerService;
 use snarkos_node_sync::{BlockSync, Ping};
-use snarkos_utilities::NodeDataDir;
+use snarkos_utilities::{CallbackHandle, NodeDataDir};
 
 use snarkvm::{
     console::account::Address,
@@ -42,11 +32,11 @@ use snarkvm::{
         narwhal::{BatchCertificate, Data, Subdag, Transmission, TransmissionID},
         puzzle::{Solution, SolutionID},
     },
-    prelude::{Field, Network, Result, bail, ensure},
+    prelude::{Field, Network, bail, ensure},
     utilities::flatten_error,
 };
 
-use anyhow::Context;
+use anyhow::{Context, Result};
 use colored::Colorize;
 use indexmap::{IndexMap, IndexSet};
 #[cfg(feature = "locktick")]
@@ -67,10 +57,19 @@ use std::{
 };
 #[cfg(not(feature = "locktick"))]
 use tokio::sync::Mutex as TMutex;
-use tokio::{
-    sync::{OnceCell, oneshot},
-    task::JoinHandle,
-};
+use tokio::task::JoinHandle;
+
+/// Structs that implement this trait can listen for BFT events.
+/// This is used by the `Consensus` module to advance the ledger when new subDAGs are committed.
+#[async_trait::async_trait]
+pub trait BftCallback<N: Network>: Send + std::marker::Sync {
+    /// Attempts to build a new block from the given subDAG, and (tries to) advance the legder to it.
+    async fn process_bft_subdag(
+        &self,
+        subdag: Subdag<N>,
+        transmissions: IndexMap<TransmissionID<N>, Transmission<N>>,
+    ) -> Result<bool>;
+}
 
 #[derive(Clone)]
 pub struct BFT<N: Network> {
@@ -82,10 +81,10 @@ pub struct BFT<N: Network> {
     leader_certificate: Arc<RwLock<Option<BatchCertificate<N>>>>,
     /// The timer for the leader certificate to be received.
     leader_certificate_timer: Arc<AtomicI64>,
-    /// The consensus sender.
-    consensus_sender: Arc<OnceCell<ConsensusSender<N>>>,
     /// Handles for all spawned tasks.
     handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
+    /// The BFT callback (used by `Consensus`).
+    bft_callback: Arc<CallbackHandle<Arc<dyn BftCallback<N>>>>,
     /// The BFT lock.
     lock: Arc<TMutex<()>>,
 }
@@ -119,8 +118,8 @@ impl<N: Network> BFT<N> {
             dag: Default::default(),
             leader_certificate: Default::default(),
             leader_certificate_timer: Default::default(),
-            consensus_sender: Default::default(),
             handles: Default::default(),
+            bft_callback: Default::default(),
             lock: Default::default(),
         })
     }
@@ -132,7 +131,7 @@ impl<N: Network> BFT<N> {
     pub async fn run(
         &mut self,
         ping: Option<Arc<Ping<N>>>,
-        consensus_sender: Option<ConsensusSender<N>>,
+        bft_callback: Option<Arc<dyn BftCallback<N>>>,
         primary_sender: PrimarySender<N>,
         primary_receiver: PrimaryReceiver<N>,
     ) -> Result<()> {
@@ -143,10 +142,11 @@ impl<N: Network> BFT<N> {
         self.start_handlers(bft_receiver);
         // Next, run the primary instance.
         self.primary.run(ping, Some(bft_sender), primary_sender, primary_receiver).await?;
-        // Lastly, set the consensus sender.
-        // Note: This ensures during initial syncing, that the BFT does not advance the ledger.
-        if let Some(consensus_sender) = consensus_sender {
-            self.consensus_sender.set(consensus_sender).expect("Consensus sender already set");
+
+        // Lastly, set up callbacks for BFT itself.
+        // Note: This ensures that, during initial syncing, the BFT does not advance the ledger.
+        if let Some(callback) = bft_callback {
+            self.bft_callback.set(callback)?;
         }
         Ok(())
     }
@@ -732,27 +732,16 @@ impl<N: Network> BFT<N> {
                     "BFT failed to commit - the subdag anchor round {anchor_round} does not match the leader round {leader_round}",
                 );
 
-                // Trigger consensus.
-                if let Some(consensus_sender) = self.consensus_sender.get() {
-                    // Initialize a callback sender and receiver.
-                    let (callback_sender, callback_receiver) = oneshot::channel();
+                // Trigger the callback (if any).
+                if let Some(cb) = self.bft_callback.get() {
                     // Send the subdag and transmissions to consensus.
-                    consensus_sender.tx_consensus_subdag.send((subdag, transmissions, callback_sender)).await?;
-                    // Await the callback to continue.
-                    match callback_receiver.await {
-                        Ok(Ok(_)) => (), // continue
-                        Ok(Err(err)) => {
-                            let err = err.context(format!("BFT failed to advance the subdag for round {anchor_round}"));
-                            error!("{}", &flatten_error(err));
-                            return Ok(());
-                        }
-                        Err(err) => {
-                            let err: anyhow::Error = err.into();
-                            let err =
-                                err.context(format!("BFT failed to receive the callback for round {anchor_round}"));
-                            error!("{}", flatten_error(err));
-                            return Ok(());
-                        }
+                    if let Err(err) = cb
+                        .process_bft_subdag(subdag, transmissions)
+                        .await
+                        .with_context(|| format!("BFT failed to advance the subdag for round {anchor_round}"))
+                    {
+                        error!("{}", flatten_error(err));
+                        return Ok(());
                     }
                 }
 
@@ -972,6 +961,8 @@ impl<N: Network> BFT<N> {
     /// Shuts down the BFT.
     pub async fn shut_down(&self) {
         info!("Shutting down the BFT...");
+        // Remove the callback.
+        self.bft_callback.clear();
         // Acquire the lock.
         let _lock = self.lock.lock().await;
         // Shut down the primary.

@@ -14,15 +14,13 @@
 // limitations under the License.
 
 use crate::{
-    Gateway,
     MAX_FETCH_TIMEOUT_IN_MS,
-    Transport,
-    events::DataBlocks,
+    events::{CertificateRequest, CertificateResponse, DataBlocks, Event},
+    gateway::{Gateway, Transport},
     helpers::{BFTSender, Pending, Storage, SyncReceiver, fmt_id, max_redundant_requests},
+    ledger_service::{BeginLedgerUpdateError, LedgerService},
     spawn_blocking,
 };
-use snarkos_node_bft_events::{CertificateRequest, CertificateResponse, Event};
-use snarkos_node_bft_ledger_service::{BeginLedgerUpdateError, LedgerService};
 use snarkos_node_network::PeerPoolHandling;
 use snarkos_node_sync::{BLOCK_REQUEST_BATCH_DELAY, BlockSync, Ping, PrepareSyncRequest, locators::BlockLocators};
 

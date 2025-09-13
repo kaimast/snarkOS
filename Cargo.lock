@@ -4639,6 +4639,7 @@ version = "4.4.0"
 dependencies = [
  "aleo-std",
  "anyhow",
+ "async-trait",
  "colored 3.0.0",
  "indexmap 2.13.0",
  "itertools 0.14.0",
@@ -4837,6 +4838,7 @@ dependencies = [
 name = "snarkos-utilities"
 version = "4.2.1"
 dependencies = [
+ "anyhow",
  "locktick",
  "parking_lot",
  "tokio",
