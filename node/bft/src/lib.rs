@@ -34,7 +34,7 @@ use std::time::Duration;
 pub mod helpers;
 
 mod bft;
-pub use bft::*;
+pub use bft::{BFT, BftCallback};
 
 mod gateway;
 pub use gateway::*;

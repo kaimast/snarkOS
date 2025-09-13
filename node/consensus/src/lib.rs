@@ -27,17 +27,10 @@ extern crate snarkos_node_metrics as metrics;
 use snarkos_account::Account;
 use snarkos_node_bft::{
     BFT,
+    BftCallback,
     MAX_BATCH_DELAY,
     Primary,
-    helpers::{
-        ConsensusReceiver,
-        PrimarySender,
-        Storage as NarwhalStorage,
-        fmt_id,
-        init_consensus_channels,
-        init_primary_channels,
-    },
-    spawn_blocking,
+    helpers::{PrimarySender, Storage as NarwhalStorage, fmt_id, init_primary_channels},
 };
 use snarkos_node_bft_ledger_service::LedgerService;
 use snarkos_node_bft_storage_service::BFTPersistentStorage;
@@ -57,6 +50,7 @@ use snarkvm::{
 
 use aleo_std::StorageMode;
 use anyhow::{Context, Result};
+use async_trait::async_trait;
 use colored::Colorize;
 use indexmap::IndexMap;
 #[cfg(feature = "locktick")]
@@ -173,12 +167,12 @@ impl<N: Network> Consensus<N> {
 
         info!("Starting the consensus instance...");
 
-        // First, initialize the consensus channels.
-        let (consensus_sender, consensus_receiver) = init_consensus_channels();
-        // Then, start the consensus handlers.
-        _self.start_handlers(consensus_receiver);
+        _self.start_handlers();
         // Lastly, also start BFTs handlers.
-        _self.bft.run(Some(ping), Some(consensus_sender), _self.primary_sender.clone(), primary_receiver).await?;
+        _self
+            .bft
+            .run(Some(ping), Some(Arc::new(_self.clone())), _self.primary_sender.clone(), primary_receiver)
+            .await?;
 
         Ok(_self)
     }
@@ -494,17 +488,7 @@ impl<N: Network> Consensus<N> {
     /// Starts the consensus handlers.
     ///
     /// This is only invoked once, in the constructor.
-    fn start_handlers(&self, consensus_receiver: ConsensusReceiver<N>) {
-        let ConsensusReceiver { mut rx_consensus_subdag } = consensus_receiver;
-
-        // Process the committed subdag and transmissions from the BFT.
-        let self_ = self.clone();
-        self.spawn(async move {
-            while let Some((committed_subdag, transmissions, callback)) = rx_consensus_subdag.recv().await {
-                self_.process_bft_subdag(committed_subdag, transmissions, callback).await;
-            }
-        });
-
+    fn start_handlers(&self) {
         // Process the unconfirmed transactions in the memory pool.
         //
         // This loop wakes up either when a block is committed (signaled via notify) or after a timeout.
@@ -531,7 +515,10 @@ impl<N: Network> Consensus<N> {
             }
         });
     }
+}
 
+#[async_trait]
+impl<N: Network> BftCallback<N> for Consensus<N> {
     /// Attempts to build a new block from the given subDAG, and (tries to) advance the legder to it.
     ///
     /// # Returns
@@ -542,12 +529,13 @@ impl<N: Network> Consensus<N> {
         &self,
         subdag: Subdag<N>,
         transmissions: IndexMap<TransmissionID<N>, Transmission<N>>,
-        callback: oneshot::Sender<Result<bool>>,
-    ) {
+    ) -> Result<()> {
         // Try to advance to the next block.
         let self_ = self.clone();
         let transmissions_ = transmissions.clone();
-        let result = spawn_blocking! { self_.try_advance_to_next_block(subdag, transmissions_).with_context(|| "Unable to advance to the next block") };
+        let result = self_
+            .try_advance_to_next_block(subdag, transmissions_)
+            .with_context(|| "Unable to advance to the next block");
 
         // If the block failed to advance, reinsert the transmissions into the memory pool.
         match result {
@@ -567,9 +555,11 @@ impl<N: Network> Consensus<N> {
             }
         }
 
-        callback.send(result).ok();
+        result.map(|_| ())
     }
+}
 
+impl<N: Network> Consensus<N> {
     /// Attempts to advance the ledger to the next block, and updates the metrics (if enabled) accordingly.
     ///
     /// # Returns

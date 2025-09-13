@@ -649,9 +649,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.58"
+version = "1.2.59"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1e928d4b69e3077709075a938a05ffbedfa53a84c8f766efbf8220bb1ff60e1"
+checksum = "b7a4d3ec6524d28a329fc53654bbadc9bdd7b0431f5d65f1a56ffb28a1ee5283"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -780,9 +780,9 @@ dependencies = [
 
 [[package]]
 name = "cmov"
-version = "0.5.2"
+version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de0758edba32d61d1fd9f4d69491b47604b91ee2f7e6b33de7e54ca4ebe55dc3"
+checksum = "3f88a43d011fc4a6876cb7344703e297c71dda42494fee094d5f7c76bf13f746"
 
 [[package]]
 name = "colorchoice"
@@ -932,7 +932,7 @@ dependencies = [
  "cookie",
  "document-features",
  "idna",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "log",
  "serde",
  "serde_derive",
@@ -1114,9 +1114,9 @@ dependencies = [
 
 [[package]]
 name = "ctutils"
-version = "0.4.0"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1005a6d4446f5120ef475ad3d2af2b30c49c2c9c6904258e3bb30219bebed5e4"
+checksum = "7d5515a3834141de9eafb9717ad39eea8247b5674e6066c404e8c4b365d2a29e"
 dependencies = [
  "cmov",
  "subtle",
@@ -1587,9 +1587,9 @@ dependencies = [
 
 [[package]]
 name = "fastrand"
-version = "2.3.0"
+version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
+checksum = "9f1f227452a390804cdb637b74a86990f2a7d7ba4b7d5693aac9b4dd6defd8d6"
 
 [[package]]
 name = "fiat-crypto"
@@ -1690,9 +1690,12 @@ dependencies = [
 
 [[package]]
 name = "fragile"
-version = "2.0.1"
+version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28dd6caf6059519a65843af8fe2a3ae298b14b80179855aeb4adc2c1934ee619"
+checksum = "8878864ba14bb86e818a412bfd6f18f9eabd4ec0f008a28e8f7eb61db532fcf9"
+dependencies = [
+ "futures-core",
+]
 
 [[package]]
 name = "fs_extra"
@@ -1929,7 +1932,7 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "http 1.4.0",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "slab",
  "tokio",
  "tokio-util",
@@ -2417,9 +2420,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.13.0"
+version = "2.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7714e70437a7dc3ac8eb7e6f8df75fd8eb422675fc7678aff7364301092b1017"
+checksum = "45a8a2b9cb3e0b0c1803dbb0758ffac5de2f425b23c28f518faabd9d805342ff"
 dependencies = [
  "equivalent",
  "hashbrown 0.16.1",
@@ -2707,9 +2710,9 @@ dependencies = [
 
 [[package]]
 name = "libz-sys"
-version = "1.1.25"
+version = "1.1.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d52f4c29e2a68ac30c9087e1b772dc9f44a2b66ed44edf2266cf2be9b03dafc1"
+checksum = "fc3a226e576f50782b3305c5ccf458698f92798987f551c6a02efe8276721e22"
 dependencies = [
  "cc",
  "libc",
@@ -2879,7 +2882,7 @@ dependencies = [
  "base64 0.21.7",
  "hyper 0.14.32",
  "hyper-tls 0.5.0",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "ipnet",
  "metrics",
  "metrics-util",
@@ -4443,9 +4446,9 @@ dependencies = [
 
 [[package]]
 name = "semver"
-version = "1.0.27"
+version = "1.0.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d767eb0aabc880b29956c35734170f26ed551a859dbd361d140cdbeca61ab1e2"
+checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
 
 [[package]]
 name = "seq-macro"
@@ -4489,7 +4492,7 @@ version = "1.0.149"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "83fc039473c5595ace860d8c4fafa220ff474b3fc6bfdb4293327f1a37e94d86"
 dependencies = [
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "itoa",
  "memchr",
  "serde",
@@ -4539,7 +4542,7 @@ dependencies = [
  "chrono",
  "hex",
  "indexmap 1.9.3",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "schemars 0.9.0",
  "schemars 1.2.1",
  "serde_core",
@@ -4775,7 +4778,7 @@ dependencies = [
  "colored 3.1.1",
  "console-subscriber",
  "crossterm",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "locktick",
  "nix 0.30.1",
  "num_cpus",
@@ -4831,7 +4834,7 @@ dependencies = [
  "deadline",
  "futures-util",
  "http 1.4.0",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "locktick",
  "lru",
  "num_cpus",
@@ -4876,7 +4879,7 @@ dependencies = [
  "colored 3.1.1",
  "deadline",
  "futures",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "itertools",
  "locktick",
  "lru",
@@ -4921,7 +4924,7 @@ version = "4.6.0"
 dependencies = [
  "anyhow",
  "bytes",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "proptest",
  "rand 0.10.0",
  "rand_chacha 0.10.0",
@@ -4942,7 +4945,7 @@ version = "4.6.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "locktick",
  "parking_lot",
  "rand 0.10.0",
@@ -4961,7 +4964,7 @@ version = "4.6.0"
 dependencies = [
  "aleo-std",
  "anyhow",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "locktick",
  "lru",
  "parking_lot",
@@ -4997,8 +5000,9 @@ version = "4.6.0"
 dependencies = [
  "aleo-std",
  "anyhow",
+ "async-trait",
  "colored 3.1.1",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "itertools",
  "locktick",
  "lru",
@@ -5060,7 +5064,7 @@ dependencies = [
  "base64 0.22.1",
  "built",
  "http 1.4.0",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "jsonwebtoken",
  "locktick",
  "once_cell",
@@ -5142,7 +5146,7 @@ version = "4.6.0"
 dependencies = [
  "anyhow",
  "futures",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "itertools",
  "locktick",
  "parking_lot",
@@ -5174,7 +5178,7 @@ name = "snarkos-node-sync-locators"
 version = "4.6.0"
 dependencies = [
  "anyhow",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "serde",
  "snarkvm",
  "tracing",
@@ -5244,7 +5248,7 @@ dependencies = [
  "fxhash",
  "hashbrown 0.15.5",
  "hex",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "itertools",
  "num-traits",
  "rand 0.10.0",
@@ -5321,7 +5325,7 @@ version = "4.6.0"
 source = "git+https://github.com/ProvableHQ/snarkVM.git?rev=8c5ef1f5849cf12e2e00b2b4ca5cea152db48402#8c5ef1f5849cf12e2e00b2b4ca5cea152db48402"
 dependencies = [
  "anyhow",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "itertools",
  "nom",
  "num-traits",
@@ -5520,7 +5524,7 @@ source = "git+https://github.com/ProvableHQ/snarkVM.git?rev=8c5ef1f5849cf12e2e00
 dependencies = [
  "anyhow",
  "enum-iterator",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "lazy_static",
  "paste",
  "serde",
@@ -5559,7 +5563,7 @@ dependencies = [
  "enum-iterator",
  "enum_index",
  "enum_index_derive",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "num-derive",
  "num-traits",
  "seq-macro",
@@ -5697,7 +5701,7 @@ source = "git+https://github.com/ProvableHQ/snarkVM.git?rev=8c5ef1f5849cf12e2e00
 dependencies = [
  "aleo-std",
  "anyhow",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "locktick",
  "lru",
  "parking_lot",
@@ -5740,7 +5744,7 @@ version = "4.6.0"
 source = "git+https://github.com/ProvableHQ/snarkVM.git?rev=8c5ef1f5849cf12e2e00b2b4ca5cea152db48402#8c5ef1f5849cf12e2e00b2b4ca5cea152db48402"
 dependencies = [
  "anyhow",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "itertools",
  "rayon",
  "serde_json",
@@ -5763,7 +5767,7 @@ version = "4.6.0"
 source = "git+https://github.com/ProvableHQ/snarkVM.git?rev=8c5ef1f5849cf12e2e00b2b4ca5cea152db48402#8c5ef1f5849cf12e2e00b2b4ca5cea152db48402"
 dependencies = [
  "anyhow",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "proptest",
  "rand 0.10.0",
  "rand_chacha 0.10.0",
@@ -5794,7 +5798,7 @@ name = "snarkvm-ledger-narwhal-batch-certificate"
 version = "4.6.0"
 source = "git+https://github.com/ProvableHQ/snarkVM.git?rev=8c5ef1f5849cf12e2e00b2b4ca5cea152db48402#8c5ef1f5849cf12e2e00b2b4ca5cea152db48402"
 dependencies = [
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "rayon",
  "serde_json",
  "snarkvm-console",
@@ -5807,7 +5811,7 @@ name = "snarkvm-ledger-narwhal-batch-header"
 version = "4.6.0"
 source = "git+https://github.com/ProvableHQ/snarkVM.git?rev=8c5ef1f5849cf12e2e00b2b4ca5cea152db48402#8c5ef1f5849cf12e2e00b2b4ca5cea152db48402"
 dependencies = [
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "rayon",
  "serde_json",
  "snarkvm-console",
@@ -5831,7 +5835,7 @@ name = "snarkvm-ledger-narwhal-subdag"
 version = "4.6.0"
 source = "git+https://github.com/ProvableHQ/snarkVM.git?rev=8c5ef1f5849cf12e2e00b2b4ca5cea152db48402#8c5ef1f5849cf12e2e00b2b4ca5cea152db48402"
 dependencies = [
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "rayon",
  "serde_json",
  "snarkvm-console",
@@ -5871,7 +5875,7 @@ dependencies = [
  "aleo-std",
  "anyhow",
  "bincode",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "locktick",
  "lru",
  "parking_lot",
@@ -5891,7 +5895,7 @@ dependencies = [
  "aleo-std",
  "anyhow",
  "colored 3.1.1",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "locktick",
  "lru",
  "parking_lot",
@@ -5931,7 +5935,7 @@ dependencies = [
  "aleo-std-storage",
  "anyhow",
  "bincode",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "locktick",
  "parking_lot",
  "rayon",
@@ -6007,7 +6011,7 @@ source = "git+https://github.com/ProvableHQ/snarkVM.git?rev=8c5ef1f5849cf12e2e00
 dependencies = [
  "aleo-std",
  "anyhow",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "itertools",
  "locktick",
  "lru",
@@ -6053,7 +6057,7 @@ source = "git+https://github.com/ProvableHQ/snarkVM.git?rev=8c5ef1f5849cf12e2e00
 dependencies = [
  "aleo-std",
  "colored 3.1.1",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "itertools",
  "locktick",
  "parking_lot",
@@ -6079,7 +6083,7 @@ version = "4.6.0"
 source = "git+https://github.com/ProvableHQ/snarkVM.git?rev=8c5ef1f5849cf12e2e00b2b4ca5cea152db48402#8c5ef1f5849cf12e2e00b2b4ca5cea152db48402"
 dependencies = [
  "enum-iterator",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "paste",
  "rand 0.10.0",
  "rand_chacha 0.10.0",
@@ -6649,9 +6653,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.50.0"
+version = "1.51.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27ad5e34374e03cfffefc301becb44e9dc3c17584f414349ebe29ed26661822d"
+checksum = "2bd1c4c0fc4a7ab90fc15ef6daaa3ec3b893f004f915f2392557ed23237820cd"
 dependencies = [
  "bytes",
  "libc",
@@ -6667,9 +6671,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-macros"
-version = "2.6.1"
+version = "2.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c55a2eff8b69ce66c84f85e1da1c233edc36ceb85a2058d11b0d6a3c7e7569c"
+checksum = "385a6cb71ab9ab790c5fe8d67f1645e6c450a7ce006a33de03daa956cf70a496"
 dependencies = [
  "proc-macro2",
  "quote 1.0.45",
@@ -6746,7 +6750,7 @@ version = "0.9.12+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf92845e79fc2e2def6a5d828f0801e29a2f8acc037becc5ab08595c7d5e9863"
 dependencies = [
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "serde_core",
  "serde_spanned",
  "toml_datetime",
@@ -6766,9 +6770,9 @@ dependencies = [
 
 [[package]]
 name = "toml_parser"
-version = "1.1.1+spec-1.1.0"
+version = "1.1.2+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39ca317ebc49f06bd748bfba29533eac9485569dc9bf80b849024b025e814fb9"
+checksum = "a2abe9b86193656635d2411dc43050282ca48aa31c2451210f4202550afb7526"
 dependencies = [
  "winnow 1.0.1",
 ]
@@ -7302,7 +7306,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bb0e353e6a2fbdc176932bbaab493762eb1255a7900fe0fea1a2f96c296cc909"
 dependencies = [
  "anyhow",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "wasm-encoder",
  "wasmparser",
 ]
@@ -7315,7 +7319,7 @@ checksum = "47b807c72e1bac69382b3a6fb3dbe8ea4c0ed87ff5629b8685ae6b9a611028fe"
 dependencies = [
  "bitflags 2.11.0",
  "hashbrown 0.15.5",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "semver",
 ]
 
@@ -7822,7 +7826,7 @@ checksum = "b7c566e0f4b284dd6561c786d9cb0142da491f46a9fbed79ea69cdad5db17f21"
 dependencies = [
  "anyhow",
  "heck",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "prettyplease",
  "syn 2.0.117",
  "wasm-metadata",
@@ -7853,7 +7857,7 @@ checksum = "9d66ea20e9553b30172b5e831994e35fbde2d165325bec84fc43dbf6f4eb9cb2"
 dependencies = [
  "anyhow",
  "bitflags 2.11.0",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "log",
  "serde",
  "serde_derive",
@@ -7872,7 +7876,7 @@ checksum = "ecc8ac4bc1dc3381b7f59c34f00b67e18f910c2c0f50015669dde7def656a736"
 dependencies = [
  "anyhow",
  "id-arena",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "log",
  "semver",
  "serde",
@@ -7884,9 +7888,9 @@ dependencies = [
 
 [[package]]
 name = "writeable"
-version = "0.6.2"
+version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9edde0db4769d2dc68579893f2306b26c6ecfbe0ef499b013d731b7b9247e0b9"
+checksum = "1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4"
 
 [[package]]
 name = "yoke"
@@ -8016,7 +8020,7 @@ dependencies = [
  "crossbeam-utils",
  "displaydoc",
  "flate2",
- "indexmap 2.13.0",
+ "indexmap 2.13.1",
  "memchr",
  "thiserror 2.0.18",
  "time",

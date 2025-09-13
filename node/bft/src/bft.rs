@@ -15,7 +15,7 @@
 
 use crate::{
     MAX_LEADER_CERTIFICATE_DELAY,
-    helpers::{ConsensusSender, DAG, PrimaryReceiver, PrimarySender, Storage, fmt_id, now},
+    helpers::{DAG, PrimaryReceiver, PrimarySender, Storage, fmt_id, now},
     primary::{Primary, PrimaryCallback},
     sync::SyncCallback,
 };
@@ -23,7 +23,7 @@ use crate::{
 use snarkos_account::Account;
 use snarkos_node_bft_ledger_service::LedgerService;
 use snarkos_node_sync::{BlockSync, Ping};
-use snarkos_utilities::NodeDataDir;
+use snarkos_utilities::{CallbackHandle, NodeDataDir};
 
 use snarkvm::{
     console::account::Address,
@@ -56,7 +56,16 @@ use std::{
 };
 #[cfg(not(feature = "locktick"))]
 use tokio::sync::Mutex;
-use tokio::sync::{OnceCell, oneshot};
+
+#[async_trait]
+pub trait BftCallback<N: Network>: Send + std::marker::Sync {
+    /// Attempts to build a new block from the given subDAG, and (tries to) advance the legder to it.
+    async fn process_bft_subdag(
+        &self,
+        subdag: Subdag<N>,
+        transmissions: IndexMap<TransmissionID<N>, Transmission<N>>,
+    ) -> Result<()>;
+}
 
 #[derive(Clone)]
 pub struct BFT<N: Network> {
@@ -68,14 +77,14 @@ pub struct BFT<N: Network> {
     leader_certificate: Arc<RwLock<Option<BatchCertificate<N>>>>,
     /// The timer for the leader certificate to be received.
     leader_certificate_timer: Arc<AtomicI64>,
-    /// The consensus sender.
-    consensus_sender: Arc<OnceCell<ConsensusSender<N>>>,
     /// Ensures only one call to `commit_leader_certificate` runs at a time.
     ///
     /// Without this, a second certificate crossing the availability threshold while the consensus
     /// callback for a prior commit is still in-flight would re-walk already-committed rounds
     /// (because `last_committed_round` hasn't been updated yet), causing duplicate subdag commits.
     commit_lock: Arc<Mutex<()>>,
+    /// The BFT callback (used by `Consensus`).
+    bft_callback: Arc<CallbackHandle<Arc<dyn BftCallback<N>>>>,
 }
 
 impl<N: Network> BFT<N> {
@@ -107,8 +116,8 @@ impl<N: Network> BFT<N> {
             dag: Default::default(),
             leader_certificate: Default::default(),
             leader_certificate_timer: Default::default(),
-            consensus_sender: Default::default(),
             commit_lock: Default::default(),
+            bft_callback: Default::default(),
         })
     }
 
@@ -119,23 +128,22 @@ impl<N: Network> BFT<N> {
     pub async fn run(
         &mut self,
         ping: Option<Arc<Ping<N>>>,
-        consensus_sender: Option<ConsensusSender<N>>,
+        bft_callback: Option<Arc<dyn BftCallback<N>>>,
         primary_sender: PrimarySender<N>,
         primary_receiver: PrimaryReceiver<N>,
     ) -> Result<()> {
         info!("Starting the BFT instance...");
-        // Set up callbacks.
+        // Set up callbacks to pass to the primary.
         let primary_callback = Some(Arc::new(self.clone()) as Arc<dyn PrimaryCallback<N>>);
-
         let sync_callback = Some(Arc::new(self.clone()) as Arc<dyn SyncCallback<N>>);
 
         // Next, run the primary instance.
         self.primary.run(ping, primary_callback, sync_callback, primary_sender, primary_receiver).await?;
 
-        // Lastly, set the consensus sender.
-        // Note: This ensures that the BFT does not advance the ledger during initial syncing.
-        if let Some(consensus_sender) = consensus_sender {
-            self.consensus_sender.set(consensus_sender).expect("Consensus sender already set");
+        // Lastly, set up callbacks for BFT itself.
+        // Note: This ensures that, during initial syncing, the BFT does not advance the ledger.
+        if let Some(callback) = bft_callback {
+            self.bft_callback.set(callback)?;
         }
         Ok(())
     }
@@ -757,28 +765,14 @@ impl<N: Network> BFT<N> {
                 "BFT failed to commit - the subdag anchor round {anchor_round} does not match the leader round {leader_round}",
             );
 
-            // Trigger consensus (skipped if the round was already committed by a prior call).
-            if !skip_consensus {
-                if let Some(consensus_sender) = self.consensus_sender.get() {
-                    // Initialize a callback sender and receiver.
-                    let (callback_sender, callback_receiver) = oneshot::channel();
-                    // Send the subdag and transmissions to consensus.
-                    consensus_sender.tx_consensus_subdag.send((subdag, transmissions, callback_sender)).await?;
-                    // Await the callback to continue.
-                    match callback_receiver.await {
-                        Ok(Ok(_)) => (),
-                        Ok(Err(err)) => {
-                            let err = err.context(format!("BFT failed to advance the subdag for round {anchor_round}"));
-                            error!("{}", &flatten_error(err));
-                            return Ok(());
-                        }
-                        Err(err) => {
-                            let err: anyhow::Error = err.into();
-                            let err =
-                                err.context(format!("BFT failed to receive the callback for round {anchor_round}"));
-                            error!("{}", flatten_error(err));
-                            return Ok(());
-                        }
+            // Send the subdag and transmissions to consensus.
+            if !skip_consensus && let Some(cb) = self.bft_callback.get() {
+                match cb.process_bft_subdag(subdag, transmissions).await {
+                    Ok(()) => (),
+                    Err(err) => {
+                        let err = err.context(format!("BFT failed to advance the subdag for round {anchor_round}"));
+                        error!("{}", &flatten_error(err));
+                        return Ok(());
                     }
                 }
             }
@@ -902,6 +896,8 @@ impl<N: Network> BFT<N> {
     /// Shuts down the BFT.
     pub async fn shut_down(&self) {
         info!("Shutting down the BFT...");
+        // Remove the callback.
+        self.bft_callback.clear();
         // Shut down the primary.
         self.primary.shut_down().await;
     }
