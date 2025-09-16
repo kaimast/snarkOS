@@ -22,11 +22,16 @@ use crate::common::{
     test_peer::TestPeer,
     utils::{sample_gateway, sample_ledger, sample_storage},
 };
+
+use snarkos_node_bft::{
+    Gateway,
+    events::{ChallengeRequest, ChallengeResponse, Event},
+};
+
 use snarkos_account::Account;
-use snarkos_node_bft::{Gateway, helpers::init_primary_channels};
-use snarkos_node_bft_events::{ChallengeRequest, ChallengeResponse, Event};
 use snarkos_node_network::PeerPoolHandling;
 use snarkos_node_tcp::P2P;
+
 use snarkvm::{ledger::narwhal::Data, prelude::TestRng};
 
 use std::time::Duration;
@@ -47,9 +52,7 @@ async fn new_test_gateway(
     let gateway = sample_gateway(accounts[0].clone(), storage, ledger);
 
     // Set up primary channels, we discard the rx as we're testing the gateway sans BFT.
-    let (primary_tx, _primary_rx) = init_primary_channels();
-
-    gateway.run(primary_tx, [].into(), None).await;
+    gateway.run([].into(), None).await;
 
     (accounts, gateway)
 }

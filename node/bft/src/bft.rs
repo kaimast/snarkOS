@@ -15,7 +15,7 @@
 
 use crate::{
     MAX_LEADER_CERTIFICATE_DELAY_IN_SECS,
-    helpers::{BFTReceiver, DAG, PrimaryReceiver, PrimarySender, Storage, fmt_id, init_bft_channels, now},
+    helpers::{BFTReceiver, DAG, Storage, fmt_id, init_bft_channels, now},
     primary::Primary,
 };
 
@@ -132,8 +132,6 @@ impl<N: Network> BFT<N> {
         &mut self,
         ping: Option<Arc<Ping<N>>>,
         bft_callback: Option<Arc<dyn BftCallback<N>>>,
-        primary_sender: PrimarySender<N>,
-        primary_receiver: PrimaryReceiver<N>,
     ) -> Result<()> {
         info!("Starting the BFT instance...");
         // Initialize the BFT channels.
@@ -141,13 +139,14 @@ impl<N: Network> BFT<N> {
         // First, start the BFT handlers.
         self.start_handlers(bft_receiver);
         // Next, run the primary instance.
-        self.primary.run(ping, Some(bft_sender), primary_sender, primary_receiver).await?;
+        self.primary.run(ping, Some(bft_sender)).await?;
 
-        // Lastly, set up callbacks for BFT itself.
+        // Lastly, set the BFT sender.
         // Note: This ensures that, during initial syncing, the BFT does not advance the ledger.
         if let Some(callback) = bft_callback {
             self.bft_callback.set(callback)?;
         }
+
         Ok(())
     }
 
@@ -1056,9 +1055,9 @@ mod tests {
         )
     }
 
-    #[test]
+    #[tokio::test]
     #[tracing_test::traced_test]
-    fn test_is_leader_quorum_odd() -> Result<()> {
+    async fn test_is_leader_quorum_odd() -> Result<()> {
         let rng = &mut TestRng::default();
 
         // Sample batch certificates.
@@ -1110,9 +1109,9 @@ mod tests {
         Ok(())
     }
 
-    #[test]
+    #[tokio::test]
     #[tracing_test::traced_test]
-    fn test_is_leader_quorum_even_out_of_sync() -> Result<()> {
+    async fn test_is_leader_quorum_even_out_of_sync() -> Result<()> {
         let rng = &mut TestRng::default();
 
         // Sample the test instance.
@@ -1132,9 +1131,9 @@ mod tests {
         Ok(())
     }
 
-    #[test]
+    #[tokio::test]
     #[tracing_test::traced_test]
-    fn test_is_leader_quorum_even() -> Result<()> {
+    async fn test_is_leader_quorum_even() -> Result<()> {
         let rng = &mut TestRng::default();
 
         // Sample the test instance.
@@ -1153,9 +1152,9 @@ mod tests {
         Ok(())
     }
 
-    #[test]
+    #[tokio::test]
     #[tracing_test::traced_test]
-    fn test_is_even_round_ready() -> Result<()> {
+    async fn test_is_even_round_ready() -> Result<()> {
         let rng = &mut TestRng::default();
 
         // Sample batch certificates.
@@ -1220,9 +1219,9 @@ mod tests {
         Ok(())
     }
 
-    #[test]
+    #[tokio::test]
     #[tracing_test::traced_test]
-    fn test_update_leader_certificate_odd() -> Result<()> {
+    async fn test_update_leader_certificate_odd() -> Result<()> {
         let rng = &mut TestRng::default();
 
         // Sample the test instance.
@@ -1239,9 +1238,9 @@ mod tests {
         Ok(())
     }
 
-    #[test]
+    #[tokio::test]
     #[tracing_test::traced_test]
-    fn test_update_leader_certificate_bad_round() -> Result<()> {
+    async fn test_update_leader_certificate_bad_round() -> Result<()> {
         let rng = &mut TestRng::default();
 
         // Sample the test instance.
@@ -1257,9 +1256,9 @@ mod tests {
         Ok(())
     }
 
-    #[test]
+    #[tokio::test]
     #[tracing_test::traced_test]
-    fn test_update_leader_certificate_even() -> Result<()> {
+    async fn test_update_leader_certificate_even() -> Result<()> {
         let rng = &mut TestRng::default();
 
         // Set the current round.
@@ -1401,9 +1400,9 @@ mod tests {
         Ok(())
     }
 
-    #[test]
+    #[tokio::test]
     #[tracing_test::traced_test]
-    fn test_order_dag_with_dfs_fails_on_missing_previous_certificate() -> Result<()> {
+    async fn test_order_dag_with_dfs_fails_on_missing_previous_certificate() -> Result<()> {
         let rng = &mut TestRng::default();
 
         // Sample the test instance.

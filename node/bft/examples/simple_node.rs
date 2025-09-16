@@ -20,13 +20,7 @@ extern crate tracing;
 extern crate snarkos_node_metrics as metrics;
 
 use snarkos_account::Account;
-use snarkos_node_bft::{
-    BFT,
-    BftCallback,
-    MEMORY_POOL_PORT,
-    Primary,
-    helpers::{PrimarySender, Storage, init_primary_channels},
-};
+use snarkos_node_bft::{BFT, BftCallback, MEMORY_POOL_PORT, Primary, helpers::Storage};
 use snarkos_node_bft_ledger_service::TranslucentLedgerService;
 use snarkos_node_bft_storage_service::BFTMemoryService;
 use snarkos_node_sync::BlockSync;
@@ -69,7 +63,7 @@ use std::{
     str::FromStr,
     sync::{Arc, Mutex, OnceLock},
 };
-use tokio::{net::TcpListener, sync::oneshot};
+use tokio::net::TcpListener;
 use tracing_subscriber::{
     layer::{Layer, SubscriberExt},
     util::SubscriberInitExt,
@@ -119,13 +113,7 @@ pub fn initialize_logger(verbosity: u8) {
 /**************************************************************************************************/
 
 /// Starts the BFT instance.
-pub async fn start_bft(
-    node_id: u16,
-    num_nodes: u16,
-    peers: HashMap<u16, SocketAddr>,
-) -> Result<(BFT<CurrentNetwork>, PrimarySender<CurrentNetwork>)> {
-    // Initialize the primary channels.
-    let (sender, receiver) = init_primary_channels();
+pub async fn start_bft(node_id: u16, num_nodes: u16, peers: HashMap<u16, SocketAddr>) -> Result<BFT<CurrentNetwork>> {
     // Initialize the components.
     let (committee, account) = initialize_components(node_id, num_nodes)?;
     // Initialize the translucent ledger service.
@@ -161,13 +149,13 @@ pub async fn start_bft(
         None,
     )?;
     // Run the BFT instance.
-    bft.run(None, Some(consensus_handler), sender.clone(), receiver).await?;
+    bft.run(None, Some(consensus_handler)).await?;
     // Retrieve the BFT's primary.
     let primary = bft.primary();
     // Handle OS signals.
     handle_signals(primary);
     // Return the BFT instance.
-    Ok((bft, sender))
+    Ok(bft)
 }
 
 /// Starts the primary instance.
@@ -175,9 +163,7 @@ pub async fn start_primary(
     node_id: u16,
     num_nodes: u16,
     peers: HashMap<u16, SocketAddr>,
-) -> Result<(Primary<CurrentNetwork>, PrimarySender<CurrentNetwork>)> {
-    // Initialize the primary channels.
-    let (sender, receiver) = init_primary_channels();
+) -> Result<Primary<CurrentNetwork>> {
     // Initialize the components.
     let (committee, account) = initialize_components(node_id, num_nodes)?;
     // Initialize the translucent ledger service.
@@ -211,11 +197,11 @@ pub async fn start_primary(
         None,
     )?;
     // Run the primary instance.
-    primary.run(None, None, sender.clone(), receiver).await?;
+    primary.run(None, None).await?;
     // Handle OS signals.
     handle_signals(&primary);
     // Return the primary instance.
-    Ok((primary, sender))
+    Ok(primary)
 }
 
 /// Initialize the translucent ledger service.
@@ -383,8 +369,7 @@ fn handle_signals(primary: &Primary<CurrentNetwork>) {
 /**************************************************************************************************/
 
 /// Fires *fake* unconfirmed solutions at the node.
-fn fire_unconfirmed_solutions(sender: &PrimarySender<CurrentNetwork>, node_id: u16, interval_ms: u64) {
-    let tx_unconfirmed_solution = sender.tx_unconfirmed_solution.clone();
+fn fire_unconfirmed_solutions(primary: Primary<CurrentNetwork>, node_id: u16, interval_ms: u64) {
     tokio::task::spawn(async move {
         // This RNG samples the *same* fake solutions for all nodes.
         let mut shared_rng = rand_chacha::ChaChaRng::seed_from_u64(123456789);
@@ -408,13 +393,8 @@ fn fire_unconfirmed_solutions(sender: &PrimarySender<CurrentNetwork>, node_id: u
             // Sample a random fake solution ID and solution.
             let (solution_id, solution) =
                 if counter % 2 == 0 { sample(&mut shared_rng) } else { sample(&mut unique_rng) };
-            // Initialize a callback sender and receiver.
-            let (callback, callback_receiver) = oneshot::channel();
             // Send the fake solution.
-            if let Err(e) = tx_unconfirmed_solution.send((solution_id, solution, callback)).await {
-                error!("Failed to send unconfirmed solution: {e}");
-            }
-            let _ = callback_receiver.await;
+            let _ = primary.process_unconfirmed_solution(solution_id, solution).await;
             // Increment the counter.
             counter += 1;
             // Sleep briefly.
@@ -424,8 +404,7 @@ fn fire_unconfirmed_solutions(sender: &PrimarySender<CurrentNetwork>, node_id: u
 }
 
 /// Fires *fake* unconfirmed transactions at the node.
-fn fire_unconfirmed_transactions(sender: &PrimarySender<CurrentNetwork>, node_id: u16, interval_ms: u64) {
-    let tx_unconfirmed_transaction = sender.tx_unconfirmed_transaction.clone();
+fn fire_unconfirmed_transactions(primary: Primary<CurrentNetwork>, node_id: u16, interval_ms: u64) {
     tokio::task::spawn(async move {
         // This RNG samples the *same* fake transactions for all nodes.
         let mut shared_rng = rand_chacha::ChaChaRng::seed_from_u64(123456789);
@@ -450,13 +429,8 @@ fn fire_unconfirmed_transactions(sender: &PrimarySender<CurrentNetwork>, node_id
         loop {
             // Sample a random fake transaction ID and transaction.
             let (id, transaction) = if counter % 2 == 0 { sample(&mut shared_rng) } else { sample(&mut unique_rng) };
-            // Initialize a callback sender and receiver.
-            let (callback, callback_receiver) = oneshot::channel();
             // Send the fake transaction.
-            if let Err(e) = tx_unconfirmed_transaction.send((id, transaction, callback)).await {
-                error!("Failed to send unconfirmed transaction: {e}");
-            }
-            let _ = callback_receiver.await;
+            let _ = primary.process_unconfirmed_transaction(id, transaction).await;
             // Increment the counter.
             counter += 1;
             // Sleep briefly.
@@ -595,14 +569,14 @@ async fn main() -> Result<()> {
     let mut bft_holder = None;
 
     // Start the node.
-    let (primary, sender) = match args.mode {
+    let primary = match args.mode {
         Mode::Bft => {
             // Start the BFT.
-            let (bft, sender) = start_bft(args.id, args.num_nodes, peers).await?;
+            let bft = start_bft(args.id, args.num_nodes, peers).await?;
             // Set the BFT holder.
             bft_holder = Some(bft.clone());
             // Return the primary and sender.
-            (bft.primary().clone(), sender)
+            bft.primary().clone()
         }
         Mode::Narwhal => start_primary(args.id, args.num_nodes, peers).await?,
     };
@@ -614,7 +588,7 @@ async fn main() -> Result<()> {
     match (args.fire_transmissions, args.fire_solutions) {
         // Note: We allow the user to overload the solutions rate, even when the 'fire-transmissions' flag is enabled.
         (Some(rate), _) | (_, Some(rate)) => {
-            fire_unconfirmed_solutions(&sender, args.id, rate.unwrap_or(DEFAULT_INTERVAL_MS));
+            fire_unconfirmed_solutions(primary.clone(), args.id, rate.unwrap_or(DEFAULT_INTERVAL_MS));
         }
         _ => (),
     };
@@ -623,7 +597,7 @@ async fn main() -> Result<()> {
     match (args.fire_transmissions, args.fire_transactions) {
         // Note: We allow the user to overload the transactions rate, even when the 'fire-transmissions' flag is enabled.
         (Some(rate), _) | (_, Some(rate)) => {
-            fire_unconfirmed_transactions(&sender, args.id, rate.unwrap_or(DEFAULT_INTERVAL_MS));
+            fire_unconfirmed_transactions(primary.clone(), args.id, rate.unwrap_or(DEFAULT_INTERVAL_MS));
         }
         _ => (),
     };

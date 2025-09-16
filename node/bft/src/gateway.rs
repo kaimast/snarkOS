@@ -20,8 +20,8 @@ use crate::{
     MAX_BATCH_DELAY_IN_MS,
     MEMORY_POOL_PORT,
     Worker,
-    events::{Disconnect as DisconnectEvent, DisconnectReason, EventCodec, PrimaryPing},
-    helpers::{Cache, PrimarySender, Storage, SyncSender, WorkerSender, assign_to_worker},
+    events::{BatchPropose, BatchSignature, Disconnect as DisconnectEvent, DisconnectReason, EventCodec, PrimaryPing},
+    helpers::{Cache, Storage, SyncSender, WorkerSender, assign_to_worker},
     spawn_blocking,
 };
 use snarkos_account::Account;
@@ -60,12 +60,13 @@ use snarkos_node_tcp::{
     Tcp,
     protocols::{Disconnect, Handshake, OnConnect, Reading, Writing},
 };
-use snarkos_utilities::NodeDataDir;
+use snarkos_utilities::{CallbackHandle, NodeDataDir};
+
 use snarkvm::{
     console::prelude::*,
     ledger::{
         committee::Committee,
-        narwhal::{BatchHeader, Data},
+        narwhal::{BatchCertificate, BatchHeader, Data},
     },
     prelude::{Address, Field},
 };
@@ -137,6 +138,19 @@ impl<N: Network> Deref for Gateway<N> {
     }
 }
 
+/// Primary callback logic for the gateway.
+#[async_trait::async_trait]
+pub trait GatewayPrimaryCallback<N: Network>: Send + Sync {
+    /// Processes an incoming ping.
+    async fn process_incoming_ping(&self, peer_ip: SocketAddr, primary_certificate: Data<BatchCertificate<N>>);
+    /// Processes a batch propose.
+    async fn process_batch_propose(&self, peer_ip: SocketAddr, batch_propose: BatchPropose<N>);
+    /// Processes a batch signature.
+    async fn process_batch_signature(&self, peer_ip: SocketAddr, batch_signature: BatchSignature<N>);
+    /// Processes a batch certified.
+    async fn process_batch_certified(&self, peer_ip: SocketAddr, batch_certified: Data<BatchCertificate<N>>);
+}
+
 pub struct InnerGateway<N: Network> {
     /// The account of the node.
     account: Account<N>,
@@ -154,12 +168,12 @@ pub struct InnerGateway<N: Network> {
     peer_pool: RwLock<HashMap<SocketAddr, Peer<N>>>,
     #[cfg(feature = "telemetry")]
     validator_telemetry: Telemetry<N>,
-    /// The primary sender.
-    primary_sender: OnceCell<PrimarySender<N>>,
     /// The worker senders.
     worker_senders: OnceCell<IndexMap<u8, WorkerSender<N>>>,
     /// The sync sender.
     sync_sender: OnceCell<SyncSender<N>>,
+    /// The callback for bft/primary messages.
+    primary_callback: Arc<CallbackHandle<Arc<dyn GatewayPrimaryCallback<N>>>>,
     /// The spawned handles.
     handles: Mutex<Vec<JoinHandle<()>>>,
     /// The storage mode.
@@ -244,7 +258,7 @@ impl<N: Network> Gateway<N> {
             peer_pool: RwLock::new(initial_peers),
             #[cfg(feature = "telemetry")]
             validator_telemetry: Default::default(),
-            primary_sender: Default::default(),
+            primary_callback: Default::default(),
             worker_senders: Default::default(),
             sync_sender: Default::default(),
             handles: Default::default(),
@@ -255,18 +269,9 @@ impl<N: Network> Gateway<N> {
     }
 
     /// Run the gateway.
-    pub async fn run(
-        &self,
-        primary_sender: PrimarySender<N>,
-        worker_senders: IndexMap<u8, WorkerSender<N>>,
-        sync_sender: Option<SyncSender<N>>,
-    ) {
+    pub async fn run(&self, worker_senders: IndexMap<u8, WorkerSender<N>>, sync_sender: Option<SyncSender<N>>) {
         debug!("Starting the gateway for the memory pool...");
 
-        // Set the primary sender.
-        self.primary_sender.set(primary_sender).expect("Primary sender already set in gateway");
-
-        // Set the worker senders.
         self.worker_senders.set(worker_senders).expect("The worker senders are already set");
 
         // If the sync sender was provided, set the sync sender.
@@ -369,11 +374,6 @@ impl<N: Network> Gateway<N> {
     #[cfg(feature = "telemetry")]
     pub fn validator_telemetry(&self) -> &Telemetry<N> {
         &self.validator_telemetry
-    }
-
-    /// Returns the primary sender.
-    pub fn primary_sender(&self) -> &PrimarySender<N> {
-        self.primary_sender.get().expect("Primary sender not set in gateway")
     }
 
     /// Returns the number of workers.
@@ -572,18 +572,30 @@ impl<N: Network> Gateway<N> {
         match event {
             Event::BatchPropose(batch_propose) => {
                 // Send the batch propose to the primary.
-                let _ = self.primary_sender().tx_batch_propose.send((peer_ip, batch_propose)).await;
-                Ok(true)
+                if let Some(cb) = self.primary_callback.get() {
+                    cb.process_batch_propose(peer_ip, batch_propose).await;
+                    Ok(true)
+                } else {
+                    bail!("No callback set");
+                }
             }
             Event::BatchSignature(batch_signature) => {
-                // Send the batch signature to the primary.
-                let _ = self.primary_sender().tx_batch_signature.send((peer_ip, batch_signature)).await;
-                Ok(true)
+                // Send the batch propose to the primary.
+                if let Some(cb) = self.primary_callback.get() {
+                    cb.process_batch_signature(peer_ip, batch_signature).await;
+                    Ok(true)
+                } else {
+                    bail!("No calback set");
+                }
             }
             Event::BatchCertified(batch_certified) => {
                 // Send the batch certificate to the primary.
-                let _ = self.primary_sender().tx_batch_certified.send((peer_ip, batch_certified.certificate)).await;
-                Ok(true)
+                if let Some(cb) = self.primary_callback.get() {
+                    cb.process_batch_certified(peer_ip, batch_certified.certificate).await;
+                    Ok(true)
+                } else {
+                    bail!("No calback set");
+                }
             }
             Event::BlockRequest(block_request) => {
                 let BlockRequest { start_height, end_height } = block_request;
@@ -705,7 +717,11 @@ impl<N: Network> Gateway<N> {
                 }
 
                 // Send the batch certificates to the primary.
-                let _ = self.primary_sender().tx_primary_ping.send((peer_ip, primary_certificate)).await;
+                if let Some(cb) = self.primary_callback.get() {
+                    cb.process_incoming_ping(peer_ip, primary_certificate).await;
+                } else {
+                    bail!("No callback set");
+                }
                 Ok(true)
             }
             Event::TransmissionRequest(request) => {
@@ -849,6 +865,8 @@ impl<N: Network> Gateway<N> {
         self.handles.lock().iter().for_each(|handle| handle.abort());
         // Close the listener.
         self.tcp.shut_down().await;
+        // Remove the primary callback (so they can be dropped).
+        self.primary_callback.clear();
     }
 }
 
@@ -1667,15 +1685,52 @@ impl<N: Network> Gateway<N> {
     }
 }
 
+#[cfg(any(test, feature = "test"))]
+pub mod test_helpers {
+    use super::*;
+
+    type CurrentNetwork = MainnetV0;
+
+    #[derive(Default)]
+    pub struct DummyGatewayPrimaryCallback {}
+
+    #[async_trait::async_trait]
+    impl GatewayPrimaryCallback<CurrentNetwork> for DummyGatewayPrimaryCallback {
+        async fn process_incoming_ping(
+            &self,
+            _peer_ip: SocketAddr,
+            _primary_certificate: Data<BatchCertificate<CurrentNetwork>>,
+        ) {
+        }
+
+        async fn process_batch_propose(&self, _peer_ip: SocketAddr, _batch_propose: BatchPropose<CurrentNetwork>) {}
+
+        async fn process_batch_signature(
+            &self,
+            _peer_ip: SocketAddr,
+            _batch_signature: BatchSignature<CurrentNetwork>,
+        ) {
+        }
+
+        async fn process_batch_certified(
+            &self,
+            _peer_ip: SocketAddr,
+            _batch_certificate: Data<BatchCertificate<CurrentNetwork>>,
+        ) {
+        }
+    }
+}
+
 #[cfg(test)]
 mod prop_tests {
+    use super::prop_tests::GatewayAddress::{Dev, Prod};
+
     use crate::{
         Gateway,
         MAX_WORKERS,
         MEMORY_POOL_PORT,
         Worker,
-        gateway::prop_tests::GatewayAddress::{Dev, Prod},
-        helpers::{Storage, init_primary_channels, init_worker_channels},
+        helpers::{Storage, init_worker_channels},
     };
 
     use snarkos_account::Account;
@@ -1873,8 +1928,6 @@ mod prop_tests {
         )
         .unwrap();
 
-        let (primary_sender, _) = init_primary_channels();
-
         let (workers, worker_senders) = {
             // Construct a map of the worker senders.
             let mut tx_workers = IndexMap::new();
@@ -1899,7 +1952,7 @@ mod prop_tests {
             (workers, tx_workers)
         };
 
-        gateway.run(primary_sender, worker_senders, None).await;
+        gateway.run(worker_senders, None).await;
         assert_eq!(
             gateway.local_ip(),
             SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), MEMORY_POOL_PORT + dev.port().unwrap())

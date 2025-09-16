@@ -26,6 +26,7 @@ use snarkvm::{
     prelude::{Address, ConsensusVersion, Field, Network, Result},
 };
 
+#[cfg(feature = "ledger-write")]
 use indexmap::IndexMap;
 use std::ops::Range;
 
