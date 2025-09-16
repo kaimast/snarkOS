@@ -31,17 +31,14 @@ async fn test_state_coherence() {
     const N: u16 = 4;
     const TRANSMISSION_INTERVAL_MS: u64 = 10;
 
-    let mut network = tokio::task::spawn_blocking(|| {
-        TestNetwork::new(TestNetworkConfig {
-            num_nodes: N,
-            bft: true,
-            connect_all: true,
-            fire_transmissions: Some(TRANSMISSION_INTERVAL_MS),
-            log_connections: true,
-        })
+    let mut network = TestNetwork::new(TestNetworkConfig {
+        num_nodes: N,
+        bft: true,
+        connect_all: true,
+        fire_transmissions: Some(TRANSMISSION_INTERVAL_MS),
+        log_connections: true,
     })
-    .await
-    .unwrap();
+    .await;
 
     network.start().await;
 
@@ -54,17 +51,14 @@ async fn test_resync() {
     // Start N nodes, connect them and start the cannons for each.
     const N: u16 = 4;
     const TRANSMISSION_INTERVAL_MS: u64 = 10;
-    let mut network = tokio::task::spawn_blocking(|| {
-        TestNetwork::new(TestNetworkConfig {
-            num_nodes: N,
-            bft: true,
-            connect_all: true,
-            fire_transmissions: Some(TRANSMISSION_INTERVAL_MS),
-            log_connections: false,
-        })
+    let mut network = TestNetwork::new(TestNetworkConfig {
+        num_nodes: N,
+        bft: true,
+        connect_all: true,
+        fire_transmissions: Some(TRANSMISSION_INTERVAL_MS),
+        log_connections: false,
     })
-    .await
-    .unwrap();
+    .await;
     network.start().await;
 
     // Let the nodes advance through the rounds.
@@ -80,7 +74,8 @@ async fn test_resync() {
         connect_all: false,
         fire_transmissions: None,
         log_connections: false,
-    });
+    })
+    .await;
     spare_network.start().await;
 
     for i in 1..N {
@@ -101,17 +96,14 @@ async fn test_quorum_threshold() {
     const N: u16 = 4;
     const TRANSMISSION_INTERVAL_MS: u64 = 10;
 
-    let mut network = tokio::task::spawn_blocking(|| {
-        TestNetwork::new(TestNetworkConfig {
-            num_nodes: N,
-            bft: true,
-            connect_all: false,
-            fire_transmissions: None,
-            log_connections: true,
-        })
+    let mut network = TestNetwork::new(TestNetworkConfig {
+        num_nodes: N,
+        bft: true,
+        connect_all: false,
+        fire_transmissions: None,
+        log_connections: true,
     })
-    .await
-    .unwrap();
+    .await;
     network.start().await;
 
     // Check each node is at round 1 (0 is genesis).
@@ -156,17 +148,14 @@ async fn test_quorum_break() {
     // Start N nodes, connect them and start the cannons for each.
     const N: u16 = 4;
     const TRANSMISSION_INTERVAL_MS: u64 = 10;
-    let mut network = tokio::task::spawn_blocking(|| {
-        TestNetwork::new(TestNetworkConfig {
-            num_nodes: N,
-            bft: true,
-            connect_all: true,
-            fire_transmissions: Some(TRANSMISSION_INTERVAL_MS),
-            log_connections: true,
-        })
+    let mut network = TestNetwork::new(TestNetworkConfig {
+        num_nodes: N,
+        bft: true,
+        connect_all: true,
+        fire_transmissions: Some(TRANSMISSION_INTERVAL_MS),
+        log_connections: true,
     })
-    .await
-    .unwrap();
+    .await;
     network.start().await;
 
     // Check the nodes have started advancing through the rounds.
@@ -195,17 +184,14 @@ async fn test_leader_election_consistency() {
     // Start N nodes, connect them and start the cannons for each.
     const N: u16 = 4;
     const CANNON_INTERVAL_MS: u64 = 10;
-    let mut network = tokio::task::spawn_blocking(|| {
-        TestNetwork::new(TestNetworkConfig {
-            num_nodes: N,
-            bft: true,
-            connect_all: true,
-            fire_transmissions: Some(CANNON_INTERVAL_MS),
-            log_connections: true,
-        })
+    let mut network = TestNetwork::new(TestNetworkConfig {
+        num_nodes: N,
+        bft: true,
+        connect_all: true,
+        fire_transmissions: Some(CANNON_INTERVAL_MS),
+        log_connections: true,
     })
-    .await
-    .unwrap();
+    .await;
     network.start().await;
 
     // Wait for starting round to be reached
@@ -249,17 +235,14 @@ async fn test_transient_break() {
     // Start N nodes, connect them and start the cannons for each.
     const N: u16 = 4;
     const TRANSMISSION_INTERVAL_MS: u64 = 10;
-    let mut network = tokio::task::spawn_blocking(|| {
-        TestNetwork::new(TestNetworkConfig {
-            num_nodes: N,
-            bft: true,
-            connect_all: true,
-            fire_transmissions: Some(TRANSMISSION_INTERVAL_MS),
-            log_connections: false,
-        })
+    let mut network = TestNetwork::new(TestNetworkConfig {
+        num_nodes: N,
+        bft: true,
+        connect_all: true,
+        fire_transmissions: Some(TRANSMISSION_INTERVAL_MS),
+        log_connections: false,
     })
-    .await
-    .unwrap();
+    .await;
     network.start().await;
 
     // Check the nodes have started advancing through the rounds.

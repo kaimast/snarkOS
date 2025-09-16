@@ -20,14 +20,19 @@ use snarkvm::{
         PendingBlock,
         Transaction,
         committee::Committee,
-        narwhal::{BatchCertificate, Data, Subdag, Transmission, TransmissionID},
+        narwhal::{BatchCertificate, Data, Transmission, TransmissionID},
         puzzle::{Solution, SolutionID},
     },
     prelude::{Address, ConsensusVersion, Field, Network, Result},
 };
 
+#[cfg(feature = "ledger-write")]
+use snarkvm::ledger::narwhal::Subdag;
+
+#[cfg(feature = "ledger-write")]
 use indexmap::IndexMap;
-use std::ops::Range;
+
+use std::{fmt::Debug, ops::Range};
 
 /// Errors that can occur when attempting to start a ledger update.
 #[derive(Debug, thiserror::Error)]

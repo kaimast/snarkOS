@@ -5010,8 +5010,6 @@ dependencies = [
  "parking_lot",
  "snarkos-account",
  "snarkos-node-bft",
- "snarkos-node-bft-ledger-service",
- "snarkos-node-bft-storage-service",
  "snarkos-node-metrics",
  "snarkos-node-sync",
  "snarkos-utilities",

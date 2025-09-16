@@ -1386,6 +1386,7 @@ mod tests {
             NodeDataDir::new_test(None),
             None,
         )
+        .await
         .unwrap();
 
         sync.initialize(Some(Arc::new(syncing_bft.clone()))).unwrap();
@@ -1455,6 +1456,7 @@ mod tests {
             NodeDataDir::new_test(None),
             None,
         )
+        .await
         .unwrap();
 
         sync.initialize(Some(Arc::new(syncing_bft.clone()))).unwrap();
@@ -1546,6 +1548,7 @@ mod tests {
             NodeDataDir::new_test(None),
             None,
         )
+        .await
         .unwrap();
 
         sync.initialize(Some(Arc::new(syncing_bft.clone()))).unwrap();
@@ -1631,6 +1634,7 @@ mod tests {
             NodeDataDir::new_test(None),
             None,
         )
+        .await
         .unwrap();
 
         sync.initialize(Some(Arc::new(syncing_bft.clone()))).unwrap();
@@ -1713,6 +1717,7 @@ mod tests {
             NodeDataDir::new_test(None),
             None,
         )
+        .await
         .unwrap();
 
         sync.initialize(Some(Arc::new(syncing_bft.clone()))).unwrap();

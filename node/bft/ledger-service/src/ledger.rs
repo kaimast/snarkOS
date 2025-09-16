@@ -387,7 +387,7 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
 
         // Ensure that the solution is valid for the given epoch.
         let puzzle = self.ledger.puzzle().clone();
-        match spawn_blocking!(puzzle.check_solution(&solution, epoch_hash, proof_target)) {
+        match puzzle.check_solution(&solution, epoch_hash, proof_target) {
             Ok(()) => Ok(()),
             Err(e) => bail!("Invalid solution '{}' for the current epoch - {e}", fmt_id(solution_id)),
         }
