@@ -494,6 +494,8 @@ impl<N: Network> BFT<N> {
 
 impl<N: Network> BFT<N> {
     /// Stores the certificate in the DAG, and attempts to commit one or more anchors.
+    ///
+    /// Callers of this function are required to hold the write lock to the `LedgerService`, by calling [`Self::pause_for_block_sync`].
     async fn update_dag<const IS_SYNCING: bool>(&self, certificate: BatchCertificate<N>) -> Result<()> {
         // ### First, insert the certificate into the DAG. ###
         // Retrieve the round of the new certificate to add to the DAG.
@@ -738,7 +740,7 @@ impl<N: Network> BFT<N> {
                     consensus_sender.tx_consensus_subdag.send((subdag, transmissions, callback_sender)).await?;
                     // Await the callback to continue.
                     match callback_receiver.await {
-                        Ok(Ok(())) => (), // continue
+                        Ok(Ok(_)) => (), // continue
                         Ok(Err(err)) => {
                             let err = err.context(format!("BFT failed to advance the subdag for round {anchor_round}"));
                             error!("{}", &flatten_error(err));
@@ -915,6 +917,8 @@ impl<N: Network> BFT<N> {
         let self_ = self.clone();
         self.spawn(async move {
             while let Some((certificate, callback)) = rx_primary_certificate.recv().await {
+                // Hold the lock while the primary is advancing blocks.
+                let _lock = self_.lock.lock().await;
                 // Update the DAG with the certificate.
                 let result = self_.update_dag::<false>(certificate).await;
                 // Send the callback **after** updating the DAG.
