@@ -311,9 +311,14 @@ impl<N: Network> SyncCallback<N> for BFT<N> {
     }
 
     /// Notification about a new certificate detected by the `Sync` instance after fetching a new block.
-    async fn add_new_certificate(&self, certificate: BatchCertificate<N>) -> Result<()> {
-        // Update the DAG with the certificate.
-        self.update_dag::<true>(certificate).await
+    async fn add_new_certificates(&self, certificates: Vec<BatchCertificate<N>>) -> Result<()> {
+        // Hold lock while updating the DAG>
+        let _lock = self.lock.lock().await;
+        // Upd the DAG with the certificates.
+        for certificate in certificates {
+            self.update_dag::<true>(certificate).await?;
+        }
+        Ok(())
     }
 }
 
@@ -513,6 +518,8 @@ impl<N: Network> BFT<N> {
 
 impl<N: Network> BFT<N> {
     /// Stores the certificate in the DAG, and attempts to commit one or more anchors.
+    ///
+    /// Callers of this function are required to hold the write lock to the `LedgerService`, by calling [`Self::pause_for_block_sync`].
     async fn update_dag<const IS_SYNCING: bool>(&self, certificate: BatchCertificate<N>) -> Result<()> {
         // ### First, insert the certificate into the DAG. ###
         // Retrieve the round of the new certificate to add to the DAG.
@@ -757,7 +764,7 @@ impl<N: Network> BFT<N> {
                     consensus_sender.tx_consensus_subdag.send((subdag, transmissions, callback_sender)).await?;
                     // Await the callback to continue.
                     match callback_receiver.await {
-                        Ok(Ok(())) => (), // continue
+                        Ok(Ok(_)) => (), // continue
                         Ok(Err(err)) => {
                             let err = err.context(format!("BFT failed to advance the subdag for round {anchor_round}"));
                             error!("{}", &flatten_error(err));
@@ -910,9 +917,7 @@ impl<N: Network> BFT<N> {
         }
         Ok(traversal.contains(&previous_certificate))
     }
-}
 
-impl<N: Network> BFT<N> {
     /// Shuts down the BFT.
     pub async fn shut_down(&self) {
         info!("Shutting down the BFT...");
