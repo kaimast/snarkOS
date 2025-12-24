@@ -93,8 +93,6 @@ pub struct Sync<N: Network> {
     handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
     /// The response lock.
     response_lock: Arc<TMutex<()>>,
-    /// The sync lock. Ensures that only one task syncs the ledger at a time.
-    sync_lock: Arc<TMutex<()>>,
     /// The latest block responses.
     ///
     /// This is used in [`Sync::sync_storage_with_block()`] to accumulate blocks
@@ -127,7 +125,6 @@ impl<N: Network> Sync<N> {
             sync_callback: Default::default(),
             handles: Default::default(),
             response_lock: Default::default(),
-            sync_lock: Default::default(),
             pending_blocks: Default::default(),
         }
     }
@@ -436,9 +433,6 @@ impl<N: Network> Sync<N> {
         // Retrieve the blocks.
         let blocks = self.ledger.get_blocks(gc_height..block_height.saturating_add(1))?;
 
-        // Acquire the sync lock.
-        let _lock = self.sync_lock.lock().await;
-
         debug!("Syncing storage with the ledger from block {} to {}...", gc_height, block_height.saturating_add(1));
 
         /* Sync storage */
@@ -683,9 +677,6 @@ impl<N: Network> Sync<N> {
     ///
     /// This is only used by `[Self::try_advancing_block_synchronization`].
     async fn sync_ledger_with_block_without_bft(&self, block: Block<N>) -> Result<()> {
-        // Acquire the sync lock.
-        let _lock = self.sync_lock.lock().await;
-
         let self_ = self.clone();
         spawn_blocking!({
             let block_height = block.height();
@@ -818,8 +809,6 @@ impl<N: Network> Sync<N> {
     /// This function assumes that blocks are passed in order, i.e.,
     /// that the given block is a direct successor of the block that was last passed to this function.
     async fn sync_storage_with_block(&self, new_block: Block<N>) -> Result<()> {
-        // Acquire the sync lock.
-        let _lock = self.sync_lock.lock().await;
         let new_block_height = new_block.height();
 
         // If this block has already been processed, return early.
@@ -1110,10 +1099,8 @@ impl<N: Network> Sync<N> {
         info!("Shutting down the sync module...");
         // Remove the callback.
         self.sync_callback.clear();
-        // Acquire the response lock.
+        // Acquire the response lock, to ensure that no responses are processed while shutting down.
         let _lock = self.response_lock.lock().await;
-        // Acquire the sync lock.
-        let _lock = self.sync_lock.lock().await;
         // Abort the tasks.
         self.handles.lock().iter().for_each(|handle| handle.abort());
     }
