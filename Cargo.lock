@@ -518,9 +518,9 @@ dependencies = [
 
 [[package]]
 name = "blake2s_simd"
-version = "1.0.3"
+version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e90f7deecfac93095eb874a40febd69427776e24e1bd7f87f33ac62d6f0174df"
+checksum = "ee29928bad1e3f94c9d1528da29e07a1d3d04817ae8332de1e8b846c8439f4b3"
 dependencies = [
  "arrayref",
  "arrayvec",
@@ -813,9 +813,9 @@ checksum = "c2459377285ad874054d797f3ccebf984978aa39129f6eafde5cdc8315b612f8"
 
 [[package]]
 name = "constant_time_eq"
-version = "0.3.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c74b8349d32d297c9134b8c88677813a227df8f779daa29bfc29c183fe3dca6"
+checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
 name = "convert_case"
@@ -2592,8 +2592,7 @@ dependencies = [
 [[package]]
 name = "locktick"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a4a7c4b9459e549968abf200cb77c6faf0bdedc87df5065f73ca95031795050"
+source = "git+https://github.com/kaimast/locktick.git?branch=feat%2Flazy-lock#ccd81a17b018674098db3de187de4a3450e0741d"
 dependencies = [
  "backtrace",
  "parking_lot",
