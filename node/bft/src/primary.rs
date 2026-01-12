@@ -125,7 +125,7 @@ pub struct Primary<N: Network> {
     signed_proposals: Arc<RwLock<SignedProposals<N>>>,
     /// The handles for all background tasks spawned by this primary.
     handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
-    /// The lock for propose_batch.
+    /// The lock for propose_batch. It holds the most recent round that was proposed for.
     propose_lock: Arc<TMutex<u64>>,
     /// The node configuration directory.
     node_data_dir: NodeDataDir,
@@ -1763,7 +1763,9 @@ impl<N: Network> Primary<N> {
             debug!("Stored a batch certificate for round {batch_round} from '{peer_ip}'");
             // If a BFT sender was provided, send the round and certificate to the BFT.
             if let Some(cb) = self.primary_callback.get() {
-                cb.add_new_certificate(certificate).await.with_context(|| "Failed to update the DAG from sync")?;
+                cb.add_new_certificate(certificate)
+                    .await
+                    .with_context(|| format!("Failed to add new certificate from peer {peer_ip}"))?;
             }
         }
         Ok(())
