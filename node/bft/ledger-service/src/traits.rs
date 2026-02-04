@@ -128,7 +128,7 @@ pub trait LedgerService<N: Network>: Debug + Send + Sync {
         &self,
         subdag: Subdag<N>,
         transmissions: IndexMap<TransmissionID<N>, Transmission<N>>,
-    ) -> Result<Block<N>>;
+    ) -> Result<Block<N>, CheckBlockError<N>>;
 
     /// Adds the given block as the next block in the ledger.
     #[cfg(feature = "ledger-write")]

@@ -655,7 +655,7 @@ mod tests {
                 &self,
                 subdag: Subdag<N>,
                 transmissions: IndexMap<TransmissionID<N>, Transmission<N>>,
-            ) -> Result<Block<N>>;
+            ) -> Result<Block<N>, CheckBlockError<N>>;
             fn advance_to_next_block(&self, block: &Block<N>) -> Result<()>;
             fn transaction_spend_in_microcredits(&self, transaction: &Transaction<N>, consensus_version: ConsensusVersion) -> Result<u64>;
         }

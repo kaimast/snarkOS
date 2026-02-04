@@ -195,8 +195,8 @@ impl<N: Network> LedgerService<N> for ProverLedgerService<N> {
         &self,
         _subdag: Subdag<N>,
         _transmissions: IndexMap<TransmissionID<N>, Transmission<N>>,
-    ) -> Result<Block<N>> {
-        bail!("Cannot prepare advance to next quorum block in prover")
+    ) -> Result<Block<N>, CheckBlockError<N>> {
+        Err(anyhow::anyhow!("Cannot prepare advance to next quorum block in prover").into())
     }
 
     /// Adds the given block as the next block in the ledger.
