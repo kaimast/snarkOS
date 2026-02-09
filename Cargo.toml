@@ -46,10 +46,10 @@ version = "1.0.1"
 default-features = false
 
 [workspace.dependencies.snarkvm]
-#path = "../snarkVM"
-git = "https://github.com/ProvableHQ/snarkVM.git"
+path = "../snarkVM"
+#git = "https://github.com/ProvableHQ/snarkVM.git"
 #rev = "9acfa311b3"
-branch = "fix/atomic_prepare_next_block"
+#branch = "fix/atomic_prepare_next_block"
 #version = "=4.4.0"
 default-features = false
 
