@@ -43,6 +43,7 @@ test_network = [
   "test_consensus_heights",
   "snarkvm/dev-print"
 ]
+bench = [ "snarkvm/test-helpers" ]
 serial = [
   "snarkvm/serial",
   "snarkos-node/serial",
