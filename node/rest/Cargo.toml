@@ -18,6 +18,8 @@ edition = "2024"
 
 [features]
 default = [ ]
+accept_any_solution = [ ]
+disable_solution_rate_limit = [ ]
 history = [ "snarkvm/synthesizer", "snarkvm/history" ]
 telemetry = [ "snarkos-node-consensus/telemetry" ]
 cuda = [ "snarkvm/cuda", "snarkos-node-consensus/cuda", "snarkos-node-router/cuda" ]

@@ -18,6 +18,7 @@ edition = "2024"
 
 [features]
 default = [ ]
+accept_any_solution = [ ]
 ledger = [ "parking_lot", "rand", "rayon", "tokio", "tracing" ]
 ledger-write = [ ]
 locktick = [

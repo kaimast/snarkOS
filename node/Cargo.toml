@@ -18,6 +18,11 @@ edition = "2024"
 
 [features]
 default = [ ]
+accept_any_solution = [
+  "snarkos-node-bft/accept_any_solution",
+  "snarkos-node-rest/accept_any_solution",
+]
+disable_solution_rate_limit = [ "snarkos-node-rest/disable_solution_rate_limit" ]
 timer = [ "aleo-std/timer" ]
 locktick = [
   "dep:locktick",

@@ -307,17 +307,20 @@ impl<N: Network, C: ConsensusStorage<N>> LedgerService<N> for CoreLedgerService<
                 fmt_id(solution.id())
             );
         }
-        // Compute the current epoch hash.
-        let epoch_hash = self.ledger.latest_epoch_hash()?;
-        // Retrieve the current proof target.
-        let proof_target = self.ledger.latest_proof_target();
-
-        // Ensure that the solution is valid for the given epoch.
-        let puzzle = self.ledger.puzzle().clone();
-        match spawn_blocking!(puzzle.check_solution(&solution, epoch_hash, proof_target)) {
-            Ok(()) => Ok(()),
-            Err(e) => bail!("Invalid solution '{}' for the current epoch - {e}", fmt_id(solution_id)),
+        // When accept_any_solution is enabled (e.g. for benchmarking), skip puzzle verification
+        // but still enforce the solution limit above.
+        #[cfg(not(feature = "accept_any_solution"))]
+        {
+            let epoch_hash = self.ledger.latest_epoch_hash()?;
+            let proof_target = self.ledger.latest_proof_target();
+            let puzzle = self.ledger.puzzle().clone();
+            match spawn_blocking!(puzzle.check_solution(&solution, epoch_hash, proof_target)) {
+                Ok(()) => {}
+                Err(e) => bail!("Invalid solution '{}' for the current epoch - {e}", fmt_id(solution_id)),
+            }
         }
+
+        Ok(())
     }
 
     /// Checks the given transaction is well-formed and unique.

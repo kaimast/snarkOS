@@ -90,7 +90,8 @@ pub struct Rest<N: Network, C: ConsensusStorage<N>, R: Routing<N>> {
     num_verifying_deploys: Arc<AtomicUsize>,
     /// The number of ongoing execute transaction verifications via REST.
     num_verifying_executions: Arc<AtomicUsize>,
-    /// The number of ongoing solution verifications via REST.
+    /// The number of ongoing solution verifications via REST (unused when disable_solution_rate_limit).
+    #[cfg(not(feature = "disable_solution_rate_limit"))]
     num_verifying_solutions: Arc<AtomicUsize>,
 }
 
@@ -115,6 +116,7 @@ impl<N: Network, C: 'static + ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> 
             handles: Default::default(),
             num_verifying_deploys: Default::default(),
             num_verifying_executions: Default::default(),
+            #[cfg(not(feature = "disable_solution_rate_limit"))]
             num_verifying_solutions: Default::default(),
         };
         // Spawn the server.

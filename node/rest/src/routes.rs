@@ -793,33 +793,26 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         let check_solution = check_solution.check_solution.unwrap_or(false);
 
         if check_solution {
-            // Select counter and limit.
-            let (counter, limit, err_msg) =
-                (&rest.num_verifying_solutions, N::MAX_SOLUTIONS, "Too many solution verifications in progress");
-
-            // Try to acquire a slot.
-            if counter
-                .fetch_update(
-                    Ordering::Relaxed,
-                    Ordering::Relaxed,
-                    |val| {
-                        if val < limit { Some(val + 1) } else { None }
-                    },
-                )
-                .is_err()
+            // Rate-limit concurrent solution verifications (disabled by disable_solution_rate_limit for benchmarking).
+            #[cfg(not(feature = "disable_solution_rate_limit"))]
             {
-                return Err(RestError::too_many_requests(anyhow!("{err_msg}")));
+                let (counter, limit, err_msg) =
+                    (&rest.num_verifying_solutions, N::MAX_SOLUTIONS, "Too many solution verifications in progress");
+                if counter
+                    .fetch_update(
+                        Ordering::Relaxed,
+                        Ordering::Relaxed,
+                        |val| {
+                            if val < limit { Some(val + 1) } else { None }
+                        },
+                    )
+                    .is_err()
+                {
+                    return Err(RestError::too_many_requests(anyhow!("{err_msg}")));
+                }
             }
 
-            // Compute the current epoch hash.
-            let epoch_hash = rest.ledger.latest_epoch_hash()?;
-            // Retrieve the current proof target.
-            let proof_target = rest.ledger.latest_proof_target();
-            // Ensure that the solution is valid for the given epoch.
-            let puzzle = rest.ledger.puzzle().clone();
-            // Check if the prover has reached their solution limit.
-            // While snarkVM will ultimately abort any excess solutions for safety, performing this check
-            // here prevents the to-be aborted solutions from propagating through the network.
+            // Check if the prover has reached their solution limit (always enforced).
             let prover_address = solution.address();
             if rest.ledger.is_solution_limit_reached(&prover_address, 0) {
                 return Err(RestError::unprocessable_entity(anyhow!(
@@ -827,19 +820,23 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
                     fmt_id(solution.id())
                 )));
             }
-            // Verify the solution in a blocking task.
-            let res: Result<(), anyhow::Error> =
-                match tokio::task::spawn_blocking(move || puzzle.check_solution(&solution, epoch_hash, proof_target))
-                    .await
+            // When accept_any_solution is enabled (e.g. for benchmarking), skip puzzle verification.
+            #[cfg(not(feature = "accept_any_solution"))]
+            {
+                let epoch_hash = rest.ledger.latest_epoch_hash()?;
+                let proof_target = rest.ledger.latest_proof_target();
+                let puzzle = rest.ledger.puzzle().clone();
+                let res: Result<(), anyhow::Error> = match tokio::task::spawn_blocking(move || {
+                    puzzle.check_solution(&solution, epoch_hash, proof_target)
+                })
+                .await
                 {
                     Ok(Ok(())) => Ok(()),
                     Ok(Err(err)) => {
                         return match is_within_sync_leniency {
-                            // The solution failed to verify.
                             true => Err(RestError::unprocessable_entity(
                                 err.context(format!("Invalid solution '{}'", fmt_id(solution.id()))),
                             )),
-                            // The node is out of sync and may not be able to properly validate the solution.
                             false => Err(RestError::service_unavailable(anyhow!(
                                 "Unable to validate solution '{}' (node is syncing)",
                                 fmt_id(solution.id())
@@ -850,10 +847,15 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
                         return Err(RestError::internal_server_error(anyhow!("Tokio error: {err}")));
                     }
                 };
-            // Release the slot.
-            counter.fetch_sub(1, Ordering::Relaxed);
-            // Propagate error if any.
-            res?;
+                #[cfg(not(feature = "disable_solution_rate_limit"))]
+                rest.num_verifying_solutions.fetch_sub(1, Ordering::Relaxed);
+                res?;
+            }
+            #[cfg(feature = "accept_any_solution")]
+            {
+                #[cfg(not(feature = "disable_solution_rate_limit"))]
+                rest.num_verifying_solutions.fetch_sub(1, Ordering::Relaxed);
+            }
         }
 
         // If the consensus module is enabled, add the unconfirmed solution to the memory pool.

@@ -299,6 +299,8 @@ serial = [
 test_targets = [ "snarkos-cli/test_targets" ]
 test_consensus_heights = [ "snarkos-cli/test_consensus_heights" ]
 test_network = [ "snarkos-cli/test_network" ]
+accept_any_solution = [ "snarkos-node/accept_any_solution" ]
+disable_solution_rate_limit = [ "snarkos-node/disable_solution_rate_limit" ]
 tokio_console = [ "snarkos-cli/tokio_console" ]
 
 [dependencies.clap]

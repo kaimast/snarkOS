@@ -18,6 +18,7 @@ edition = "2024"
 
 [features]
 default = [ ]
+accept_any_solution = [ "snarkos-node-bft-ledger-service/accept_any_solution" ]
 telemetry = [ ]
 locktick = [
   "dep:locktick",
