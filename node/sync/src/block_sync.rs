@@ -729,39 +729,55 @@ impl<N: Network> BlockSync<N> {
         };
 
         // Start with the current height.
-        let mut current_height = self.ledger.latest_block_height();
-        let start_height = current_height;
+        let start_height = self.ledger.latest_block_height();
         trace!(
-            "Try advancing with block responses (at block {current_height}, current sync speed is {})",
+            "Try advancing with block responses (at block {start_height}, current sync speed is {})",
             self.get_sync_speed()
         );
 
+        // Collect all consecutive blocks that have completed responses.
+        // Processing them in a single spawn_blocking call avoids per-block thread-switch overhead.
+        let mut pending = Vec::new();
+        let mut h = start_height;
         loop {
-            let next_height = current_height + 1;
-
-            let Some(block) = self.peek_next_block(next_height) else {
+            let next = h + 1;
+            let Some(block) = self.peek_next_block(next) else {
                 break;
             };
-
-            // Ensure the block height matches.
-            if block.height() != next_height {
-                warn!("Block height mismatch: expected {}, found {}", current_height + 1, block.height());
+            if block.height() != next {
+                warn!("Block height mismatch: expected {next}, found {}", block.height());
                 break;
             }
+            pending.push(block);
+            h = next;
+        }
 
-            let ledger = self.ledger.clone();
+        if pending.is_empty() {
+            return Ok(false);
+        }
 
-            let (advanced, stop) = tokio::task::spawn_blocking(move || {
-                let ledger_update = match ledger.begin_ledger_update() {
-                    Ok(update) => update,
-                    Err(BeginLedgerUpdateError::ShuttingDown) => {
-                        info!("BlockSync cannot advance the ledger any more. The node is shutting down.");
-                        return Ok((false, true));
-                    }
-                    Err(err) => {
-                        return Err(anyhow!("Unexpected error when beginning ledger update: {err}"));
-                    }
-                };
+        let ledger = self.ledger.clone();
+
+        // Process all collected blocks in a single blocking task to minimize thread-switch overhead.
+        //
+        // Returns a per-block result vector and a shutdown flag.
+        // Each element is `true` if the block was actually committed, `false` if it was skipped
+        // (e.g. already in the ledger).
+        let (results, stop) = tokio::task::spawn_blocking(move || {
+            let ledger_update = match ledger.begin_ledger_update() {
+                Ok(update) => update,
+                Err(BeginLedgerUpdateError::ShuttingDown) => {
+                    info!("BlockSync cannot advance the ledger any more. The node is shutting down.");
+                    return Ok((Vec::new(), true));
+                }
+                Err(err) => {
+                    return Err(anyhow!("Unexpected error when beginning ledger update: {err}"));
+                }
+            };
+
+            let mut results = Vec::with_capacity(pending.len());
+            for block in pending {
+                let next_height = block.height();
 
                 // Try to check the next block and advance to it.
                 let block = match ledger_update.check_next_block(block) {
@@ -769,8 +785,9 @@ impl<N: Network> BlockSync<N> {
                     Err(CheckBlockError::InvalidHeight { .. })
                     | Err(CheckBlockError::BlockAlreadyExists { .. })
                     | Err(CheckBlockError::InvalidRound { .. }) => {
-                        debug!("Skipping a block at height {next_height}. The ledger already advanced",);
-                        return Ok((false, false));
+                        debug!("Skipping a block at height {next_height}. The ledger already advanced");
+                        results.push(false);
+                        continue;
                     }
                     Err(err) => {
                         warn!("{err}");
@@ -786,30 +803,31 @@ impl<N: Network> BlockSync<N> {
                     )
                 })?;
 
-                Ok((true, false))
-            })
-            .await??;
-
-            // Only count successful advances.
-            // We may not always advance, for example, if the block was already added to the ledger.
-            if advanced {
-                self.count_request_completed();
+                results.push(true);
             }
 
-            // Remove the block response.
-            self.remove_block_response(next_height);
+            Ok((results, false))
+        })
+        .await??;
 
-            // If the node is shutting down, exit the loop.
-            if stop {
-                break;
-            }
-
-            // Update the latest height.
-            current_height = next_height;
+        if stop {
+            return Ok(false);
         }
 
-        if current_height > start_height {
-            self.set_sync_height(current_height);
+        // Post-process: update metrics, wake the request loop for each processed block.
+        let mut new_height = start_height;
+        for (i, actually_advanced) in results.iter().enumerate() {
+            let height = start_height + i as u32 + 1;
+            // Only count actual advances (not blocks already committed by another path).
+            if *actually_advanced {
+                self.count_request_completed();
+            }
+            self.remove_block_response(height);
+            new_height = height;
+        }
+
+        if new_height > start_height {
+            self.set_sync_height(new_height);
             Ok(true)
         } else {
             Ok(false)
